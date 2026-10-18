@@ -1,7 +1,9 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import List
+from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Approved chunking defaults required by ARCHITECTURE.md Section 5.1 (lines 226-240)
@@ -113,6 +115,30 @@ class Settings(BaseSettings):
     LANGCHAIN_ENDPOINT: str
     LANGCHAIN_API_KEY: str
     LANGCHAIN_PROJECT: str
+
+    @model_validator(mode="after")
+    def resolve_local_docker_hosts(self) -> "Settings":
+        """When running on host OS outside Docker, resolve container hostnames to 127.0.0.1."""
+        in_docker = Path("/.dockerenv").exists()
+        if not in_docker:
+            if self.POSTGRES_HOST == "postgres":
+                self.POSTGRES_HOST = "127.0.0.1"
+            if self.REDIS_HOST == "redis":
+                self.REDIS_HOST = "127.0.0.1"
+                self.REDIS_URL = self.REDIS_URL.replace("://redis:", "://127.0.0.1:")
+            if self.QDRANT_HOST == "qdrant":
+                self.QDRANT_HOST = "127.0.0.1"
+                self.QDRANT_URL = self.QDRANT_URL.replace("://qdrant:", "://127.0.0.1:")
+            if self.MINIO_ENDPOINT.startswith("minio:"):
+                self.MINIO_ENDPOINT = self.MINIO_ENDPOINT.replace("minio:", "127.0.0.1:", 1)
+
+        encoded_user = quote_plus(self.POSTGRES_USER)
+        encoded_pass = quote_plus(self.POSTGRES_PASSWORD)
+        self.DATABASE_URL = (
+            f"postgresql+asyncpg://{encoded_user}:{encoded_pass}"
+            f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
+        return self
 
     @property
     def cors_origin_list(self) -> List[str]:
