@@ -1,0 +1,1 @@
+"""Generation layer: evidence-only prompts, LangChain chat model streaming, and grounding validation."""

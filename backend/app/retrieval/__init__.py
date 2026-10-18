@@ -1,0 +1,1 @@
+"""Retrieval layer: Qdrant hybrid search (RRF), LangChain TenantHybridRetriever, BGE reranking, and parent context assembly."""
