@@ -1,0 +1,1 @@
+"""Observability package: structured JSON logging, Prometheus metrics, and LangSmith tracing."""
