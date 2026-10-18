@@ -1,0 +1,1 @@
+"""Ingestion pipeline: parsing, normalization, sectioning, recursive/semantic chunking, embedding, Qdrant indexing, and worker."""
