@@ -1,0 +1,1 @@
+"""Object storage layer: MinIO S3-compatible client and application storage adapter."""
