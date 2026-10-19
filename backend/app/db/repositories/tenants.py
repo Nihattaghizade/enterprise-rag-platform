@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
 from sqlalchemy import select
@@ -91,5 +92,7 @@ class TenantRepository:
         if membership is None:
             return None
         membership.role = new_role
+        membership.updated_at = datetime.now(timezone.utc)
         await self.session.flush()
+        await self.session.refresh(membership)
         return membership

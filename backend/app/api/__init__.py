@@ -1,0 +1,1 @@
+"""FastAPI thin controllers layer."""

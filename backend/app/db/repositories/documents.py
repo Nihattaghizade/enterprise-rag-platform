@@ -106,7 +106,9 @@ class DocumentRepository:
         doc = await self.get_by_id(tenant_id=tenant_id, document_id=document_id)
         if doc is None:
             return None
+        now = datetime.now(timezone.utc)
         doc.status = status
+        doc.updated_at = now
         if page_count is not None:
             doc.page_count = page_count
         if char_count is not None:
@@ -114,10 +116,11 @@ class DocumentRepository:
         if language is not None:
             doc.language = language
         if status == "deprecated":
-            doc.deprecated_at = datetime.now(timezone.utc)
+            doc.deprecated_at = now
         elif status == "deleted":
-            doc.deleted_at = datetime.now(timezone.utc)
+            doc.deleted_at = now
         await self.session.flush()
+        await self.session.refresh(doc)
         return doc
 
     async def mark_ready(
@@ -131,11 +134,13 @@ class DocumentRepository:
         if doc is None:
             return None
         doc.status = "ready"
+        doc.updated_at = datetime.now(timezone.utc)
         if page_count is not None:
             doc.page_count = page_count
         if char_count is not None:
             doc.char_count = char_count
         await self.session.flush()
+        await self.session.refresh(doc)
         return doc
 
     async def mark_failed(
@@ -147,7 +152,9 @@ class DocumentRepository:
         if doc is None:
             return None
         doc.status = "failed"
+        doc.updated_at = datetime.now(timezone.utc)
         await self.session.flush()
+        await self.session.refresh(doc)
         return doc
 
     async def create_parent_contexts(

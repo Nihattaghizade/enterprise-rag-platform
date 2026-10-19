@@ -1,0 +1,1 @@
+"""Pydantic request/response schemas and API contracts."""
