@@ -1,0 +1,119 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Refined Warm Editorial Light Theme (Alabaster, Obsidian, Deep Forest Teal & Ochre) */
+    --background: 42 28% 97%;
+    --foreground: 215 28% 11%;
+
+    --surface: 40 33% 99%;
+    --surface-elevated: 0 0% 100%;
+    --surface-muted: 40 18% 93%;
+
+    --border: 35 16% 85%;
+    --border-subtle: 35 16% 90%;
+
+    --primary: 173 72% 24%;
+    --primary-foreground: 42 33% 98%;
+    --primary-muted: 173 45% 92%;
+
+    --accent: 28 84% 44%;
+    --accent-foreground: 0 0% 100%;
+
+    --muted: 38 16% 92%;
+    --muted-foreground: 215 14% 40%;
+
+    --success: 152 68% 28%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 35 90% 38%;
+    --warning-foreground: 0 0% 100%;
+
+    --danger: 0 72% 45%;
+    --danger-foreground: 0 0% 100%;
+
+    /* Radius & Elevation Tokens */
+    --radius-xl: 1rem;
+    --radius-lg: 0.75rem;
+    --radius-md: 0.5rem;
+    --radius-sm: 0.375rem;
+
+    --shadow-panel: 0 1px 3px 0 rgba(15, 23, 42, 0.04),
+      0 1px 2px -1px rgba(15, 23, 42, 0.04);
+    --shadow-elevated: 0 12px 32px -8px rgba(15, 23, 42, 0.12),
+      0 4px 12px -4px rgba(15, 23, 42, 0.06);
+    --shadow-glow: 0 0 36px -8px hsla(173, 72%, 24%, 0.22);
+  }
+
+  .dark {
+    /* Refined Carbon & Emerald-Teal Dark Theme */
+    --background: 216 28% 7%;
+    --foreground: 40 20% 95%;
+
+    --surface: 216 24% 10%;
+    --surface-elevated: 216 22% 13%;
+    --surface-muted: 216 20% 16%;
+
+    --border: 216 18% 20%;
+    --border-subtle: 216 18% 16%;
+
+    --primary: 168 70% 44%;
+    --primary-foreground: 216 28% 7%;
+    --primary-muted: 168 50% 15%;
+
+    --accent: 32 90% 56%;
+    --accent-foreground: 216 28% 7%;
+
+    --muted: 216 20% 15%;
+    --muted-foreground: 215 14% 64%;
+
+    --success: 152 62% 45%;
+    --success-foreground: 216 28% 7%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 216 28% 7%;
+
+    --danger: 0 76% 60%;
+    --danger-foreground: 216 28% 7%;
+
+    --shadow-panel: 0 2px 6px 0 rgba(0, 0, 0, 0.35);
+    --shadow-elevated: 0 16px 40px -8px rgba(0, 0, 0, 0.6);
+    --shadow-glow: 0 0 42px -8px hsla(168, 70%, 44%, 0.25);
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+.mesh-surface {
+  background-image: radial-gradient(
+      at 12% 18%,
+      hsla(173, 72%, 32%, 0.12) 0px,
+      transparent 50%
+    ),
+    radial-gradient(at 88% 15%, hsla(28, 84%, 48%, 0.09) 0px, transparent 48%),
+    radial-gradient(at 50% 85%, hsla(173, 65%, 28%, 0.08) 0px, transparent 55%);
+}
+
+.glass-panel {
+  background: hsla(var(--surface-elevated), 0.78);
+  backdrop-filter: blur(14px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
