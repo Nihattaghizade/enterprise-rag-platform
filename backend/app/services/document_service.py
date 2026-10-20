@@ -2,6 +2,7 @@ import uuid
 from typing import Any, Optional, Sequence
 
 from redis.asyncio import Redis
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -9,6 +10,7 @@ from app.core.errors import NotFoundError, ValidationError
 from app.core.rate_limit import check_rate_limit, get_redis_client
 from app.db.models import Document
 from app.db.repositories.documents import DocumentRepository
+from app.db.repositories.tenants import TenantRepository
 from app.ingestion.index import delete_document_points
 from app.ingestion.parser import SUPPORTED_MIME_TYPES
 from app.services.audit_service import write_audit_event
@@ -91,6 +93,23 @@ async def create_upload(
     try:
         await check_rate_limit(rclient, tenant_id=tenant_id, scope="upload")
         await check_quota(session, tenant_id, redis_client=rclient)
+
+        # Enforce trial sandbox upload limit (max 2 files)
+        tenant_repo = TenantRepository(session)
+        tenant = await tenant_repo.get_by_id(tenant_id)
+        if tenant and tenant.settings and tenant.settings.get("is_sandbox"):
+            max_docs = int(tenant.settings.get("max_documents", 2))
+            doc_count_stmt = select(func.count(Document.id)).where(
+                Document.tenant_id == tenant_id,
+                Document.deleted_at.is_(None),
+            )
+            res = await session.execute(doc_count_stmt)
+            current_count = res.scalar_one() or 0
+            if current_count >= max_docs:
+                raise ValidationError(
+                    f"Trial limit reached: maximum of {max_docs} documents allowed for evaluation accounts.",
+                    code="trial_document_limit_reached",
+                )
 
         document_id = uuid.uuid4()
         storage_key = await upload_original(

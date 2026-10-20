@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RefreshCw, Trash2 } from "lucide-react";
+import { FileCheck2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { use_auth } from "@/lib/auth";
 import { list_documents, stream_chat_query } from "@/lib/api";
 import { ApiRequestError } from "@/types/api";
@@ -70,9 +70,9 @@ export default function ChatPage() {
       setDocuments(res.items);
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        setDocsError(`${err.message} (${err.code})`);
+        setDocsError(err.message);
       } else {
-        setDocsError("Could not load tenant document filters.");
+        setDocsError("Could not load knowledge base documents.");
       }
     } finally {
       setDocsLoading(false);
@@ -188,16 +188,15 @@ export default function ChatPage() {
                 ? {
                     ...m,
                     isStreaming: false,
-                    error: `${err.message} (${err.code})`,
+                    error: err.message,
                   }
                 : m
             )
           );
           pushToast({
             tone: "error",
-            title: `Chat Stream Error (${err.code})`,
+            title: "Unable to complete response",
             description: err.message,
-            requestId: err.request_id,
           });
         } else {
           setMessages((prev) =>
@@ -223,25 +222,29 @@ export default function ChatPage() {
   if (authLoading || !isAuthenticated) {
     return (
       <div className="mx-auto max-w-5xl space-y-4 p-6">
-        <Skeleton className="h-12 w-full" />
-        <Skeleton className="h-96 w-full" />
+        <Skeleton className="h-12 w-full rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-xl" />
       </div>
     );
   }
+
+  const readyDocsCount = documents.filter((d) => d.status === "ready").length;
 
   return (
     <div className="flex h-[calc(100vh-3.5rem)] flex-col">
       <div className="flex items-center justify-between border-b border-border bg-surface px-6 py-2.5 text-xs">
         <div className="flex items-center gap-3">
-          <span className="font-semibold text-foreground">
-            Grounded Retrieval Stream (`POST /api/v1/chat/stream`)
+          <span className="inline-flex items-center gap-1.5 font-semibold text-foreground">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            AI Knowledge Assistant
           </span>
-          <span className="hidden sm:inline font-mono text-muted-foreground">
+          <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-border-subtle bg-surface-elevated px-2.5 py-0.5 text-[11px] text-muted-foreground">
+            <FileCheck2 className="h-3 w-3 text-success" />
             {docsLoading
-              ? "Loading tenant corpus..."
-              : `${
-                  documents.filter((d) => d.status === "ready").length
-                } ready documents available`}
+              ? "Loading knowledge base..."
+              : `${readyDocsCount} searchable ${
+                  readyDocsCount === 1 ? "document" : "documents"
+                }`}
           </span>
         </div>
 
@@ -249,7 +252,7 @@ export default function ChatPage() {
           {docsError && (
             <Button variant="outline" size="sm" onClick={loadCorpusDocuments}>
               <RefreshCw className="h-3 w-3" />
-              Retry Corpus Load
+              Reload Sources
             </Button>
           )}
           {messages.length > 0 && (
@@ -260,7 +263,7 @@ export default function ChatPage() {
               disabled={isStreaming}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Clear Thread
+              New Conversation
             </Button>
           )}
         </div>

@@ -54,6 +54,10 @@ async def process_ingest_job(
                 logger.error("Document %s not found for ingestion", document_id)
                 return
 
+            doc_id = document.id
+            doc_tenant_id = document.tenant_id
+            doc_uploader_id = document.uploader_id
+
             try:
                 raw_file = await download_object(document.storage_key)
                 parsed = parse_file(raw_file, document.mime_type, filename=document.file_name)
@@ -104,13 +108,13 @@ async def process_ingest_job(
                 async with session_factory() as err_session:
                     err_doc_repo = DocumentRepository(err_session)
                     err_audit_repo = AuditRepository(err_session)
-                    await err_doc_repo.mark_failed(document_id=document.id, tenant_id=document.tenant_id)
+                    await err_doc_repo.mark_failed(document_id=doc_id, tenant_id=doc_tenant_id)
                     await err_audit_repo.create_audit_log(
-                        tenant_id=document.tenant_id,
-                        actor_user_id=document.uploader_id,
+                        tenant_id=doc_tenant_id,
+                        actor_user_id=doc_uploader_id,
                         action="document.ingest_failed",
                         resource_type="document",
-                        resource_id=document.id,
+                        resource_id=doc_id,
                         details={"error": type(exc).__name__},
                     )
                     await err_session.commit()

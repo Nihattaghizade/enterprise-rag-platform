@@ -1,7 +1,7 @@
 import uuid
 from typing import Any, Optional
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class ErrorResponse(BaseModel):
@@ -36,3 +36,28 @@ class TokenResponse(BaseModel):
 
 class LogoutResponse(BaseModel):
     status: str = "logged_out"
+
+
+class WorkspaceOption(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    name: str
+    slug: str
+
+
+class SignUpRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=6, description="Password must be at least 6 characters.")
+    role: str = Field(..., pattern="^(trial_viewer|viewer|editor|admin)$")
+    tenant_id: Optional[uuid.UUID] = None
+    new_tenant_name: Optional[str] = Field(None, max_length=100)
+
+
+class SignUpResponse(BaseModel):
+    status: str
+    requires_approval: bool
+    message: str
+    user_id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    role: str

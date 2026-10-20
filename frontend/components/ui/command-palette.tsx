@@ -3,11 +3,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  Activity,
   Building2,
   FileText,
   Home,
   LogIn,
+  LogOut,
   MessageSquare,
   Moon,
   Search,
@@ -56,8 +56,8 @@ export function CommandPalette({
       {
         id: "home",
         label: isAuthenticated
-          ? "Go to Workspace Bento Overview"
-          : "Go to Platform Landing Page",
+          ? "Go to Workspace Overview"
+          : "Go to Platform Home",
         section: "Navigation",
         icon: <Home className="h-4 w-4 text-primary" />,
         onSelect: () => router.push("/"),
@@ -68,7 +68,7 @@ export function CommandPalette({
       list.push(
         {
           id: "chat",
-          label: "Open Evidence-Grounded RAG Chat",
+          label: "Open AI Knowledge Assistant",
           section: "Navigation",
           shortcut: "G C",
           icon: <MessageSquare className="h-4 w-4 text-primary" />,
@@ -76,7 +76,7 @@ export function CommandPalette({
         },
         {
           id: "documents",
-          label: "Manage & Upload Tenant Documents",
+          label: "Browse & Upload Knowledge Base Documents",
           section: "Navigation",
           shortcut: "G D",
           icon: <FileText className="h-4 w-4 text-primary" />,
@@ -87,7 +87,7 @@ export function CommandPalette({
       if (isAdmin) {
         list.push({
           id: "admin-tenants",
-          label: "Admin: Tenants, Members & Prometheus Metrics",
+          label: "Workspace & Team Administration",
           section: "Administration",
           shortcut: "G A",
           icon: <Building2 className="h-4 w-4 text-primary" />,
@@ -97,9 +97,9 @@ export function CommandPalette({
 
       list.push({
         id: "logout",
-        label: "Sign out of current workspace session",
+        label: "Sign out of workspace",
         section: "Account",
-        icon: <Activity className="h-4 w-4 text-danger" />,
+        icon: <LogOut className="h-4 w-4 text-danger" />,
         onSelect: async () => {
           await signOut();
           router.push("/login");
@@ -108,8 +108,8 @@ export function CommandPalette({
     } else {
       list.push({
         id: "login",
-        label: "Sign In to Tenant Workspace",
-        section: "Authentication",
+        label: "Sign in to Workspace",
+        section: "Account",
         icon: <LogIn className="h-4 w-4 text-primary" />,
         onSelect: () => router.push("/login"),
       });
@@ -117,7 +117,7 @@ export function CommandPalette({
 
     list.push({
       id: "theme",
-      label: "Toggle Light / Dark Appearance",
+      label: "Switch Light / Dark Appearance",
       section: "Preferences",
       shortcut: "T",
       icon: (
@@ -149,7 +149,7 @@ export function CommandPalette({
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 px-4 pt-24 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
-      aria-label="Command Palette"
+      aria-label="Quick Search"
       onClick={() => onOpenChange(false)}
     >
       <div
@@ -163,7 +163,7 @@ export function CommandPalette({
             autoFocus
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Jump to chat, documents, tenant admin, or toggle theme..."
+            placeholder="Search pages, actions, or preferences..."
             className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
           />
           <button
@@ -191,7 +191,7 @@ export function CommandPalette({
                   onOpenChange(false);
                   setQuery("");
                 }}
-                className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-muted"
+                className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm text-foreground transition-colors hover:bg-surface-muted"
               >
                 <div className="flex items-center gap-3">
                   {item.icon}

@@ -19,7 +19,6 @@ export default function DocumentsPage() {
     isAuthenticated,
     isLoading: authLoading,
     canWriteDocuments,
-    session,
   } = use_auth();
 
   const [documents, setDocuments] = useState<DocumentResponse[]>([]);
@@ -44,9 +43,9 @@ export default function DocumentsPage() {
       setTotal(response.total);
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        setError(`${err.message} (${err.code})`);
+        setError(err.message);
       } else {
-        setError("Failed to fetch tenant documents from backend.");
+        setError("Unable to load knowledge base documents.");
       }
     } finally {
       setIsLoading(false);
@@ -62,29 +61,28 @@ export default function DocumentsPage() {
   if (authLoading || !isAuthenticated) {
     return (
       <div className="mx-auto max-w-7xl space-y-4 p-6">
-        <Skeleton className="h-28 w-full" />
-        <Skeleton className="h-96 w-full" />
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-96 w-full rounded-xl" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
+    <div className="mx-auto max-w-7xl space-y-6 p-6 sm:p-8">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-2xl font-bold">
-              Tenant Document Corpus
+          <div className="flex items-center gap-2.5">
+            <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
+              Knowledge Base
             </h1>
-            <Badge variant="primary" className="font-mono">
-              total: {total}
+            <Badge variant="primary">
+              {total} {total === 1 ? "Document" : "Documents"}
             </Badge>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Scoped strictly to `tenant_id: {session?.tenant_id}`.{" "}
             {canWriteDocuments
-              ? "Your role permits uploading, reindexing, and deleting documents."
-              : "Viewer role: read-only access to documents and presigned downloads."}
+              ? "Upload, organize, and manage source documents powering your workspace AI assistant."
+              : "Browse indexed workspace documents and download original source files."}
           </p>
         </div>
       </div>
@@ -98,24 +96,24 @@ export default function DocumentsPage() {
       )}
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
+        <div className="flex items-center justify-between rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
           <div className="flex items-center gap-2">
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
           <Button variant="outline" size="sm" onClick={fetchDocuments}>
             <RefreshCw className="h-3.5 w-3.5" />
-            Retry
+            Try Again
           </Button>
         </div>
       )}
 
       {isLoading ? (
         <div className="space-y-3">
-          <Skeleton className="h-12 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-12 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
+          <Skeleton className="h-16 w-full rounded-xl" />
         </div>
       ) : (
         <DocumentList

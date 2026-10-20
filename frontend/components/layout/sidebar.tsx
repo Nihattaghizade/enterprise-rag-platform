@@ -5,11 +5,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Building2,
-  Database,
+  Crown,
   FileText,
   LayoutGrid,
-  Lock,
   MessageSquare,
+  ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import { use_auth } from "@/lib/auth";
@@ -20,6 +20,7 @@ interface NavItem {
   href: string;
   icon: React.ReactNode;
   adminOnly?: boolean;
+  superAdminOnly?: boolean;
   badge?: string;
 }
 
@@ -29,7 +30,8 @@ export function Sidebar({
   collapsed: boolean;
 }) {
   const pathname = usePathname();
-  const { session, isAuthenticated, isAdmin } = use_auth();
+  const { session, isAuthenticated, isAdmin, isSuperAdmin, isTrialViewer } =
+    use_auth();
 
   if (!isAuthenticated) {
     return null;
@@ -37,23 +39,30 @@ export function Sidebar({
 
   const navItems: NavItem[] = [
     {
-      label: "Workspace Bento",
+      label: "Platform Console",
+      href: "/admin/super",
+      icon: <Crown className="h-4 w-4 shrink-0 text-amber-400" />,
+      superAdminOnly: true,
+      badge: "Root",
+    },
+    {
+      label: "Overview",
       href: "/",
       icon: <LayoutGrid className="h-4 w-4 shrink-0" />,
     },
     {
-      label: "Evidence Chat",
+      label: "AI Assistant",
       href: "/chat",
       icon: <MessageSquare className="h-4 w-4 shrink-0" />,
-      badge: "SSE",
+      badge: "Live",
     },
     {
-      label: "Document Corpus",
+      label: "Knowledge Base",
       href: "/documents",
       icon: <FileText className="h-4 w-4 shrink-0" />,
     },
     {
-      label: "Tenants & RBAC",
+      label: "Workspace Admin",
       href: "/admin/tenants",
       icon: <Building2 className="h-4 w-4 shrink-0" />,
       adminOnly: true,
@@ -63,30 +72,36 @@ export function Sidebar({
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-border bg-surface transition-all duration-200",
+        "flex flex-col border-r border-border bg-surface transition-all duration-200 select-none",
         collapsed ? "w-16" : "w-64"
       )}
     >
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
         <Link href="/" className="flex items-center gap-2.5 overflow-hidden">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground font-mono text-xs font-bold">
-            V2
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+            <Sparkles className="h-4 w-4" />
           </div>
           {!collapsed && (
             <div className="truncate">
-              <p className="font-display text-sm font-semibold leading-none">
-                Veritas RAG
+              <p className="font-display text-sm font-semibold tracking-tight leading-none text-foreground">
+                Veritas AI
               </p>
-              <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
-                BGE-M3 · Hybrid RRF
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Knowledge Intelligence
               </p>
             </div>
           )}
         </Link>
       </div>
 
-      <div className="flex-1 space-y-1 p-2.5">
+      <div className="flex-1 space-y-1 p-3">
+        {!collapsed && (
+          <p className="px-3 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
+            Workspace
+          </p>
+        )}
         {navItems.map((item) => {
+          if (item.superAdminOnly && !isSuperAdmin) return null;
           if (item.adminOnly && !isAdmin) return null;
           const active =
             item.href === "/"
@@ -99,9 +114,9 @@ export function Sidebar({
               href={item.href}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center justify-between rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                "flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-all",
                 active
-                  ? "bg-primary-muted text-primary border border-primary/20"
+                  ? "bg-primary-muted text-primary shadow-sm border border-primary/20"
                   : "text-muted-foreground hover:bg-surface-muted hover:text-foreground"
               )}
             >
@@ -110,7 +125,7 @@ export function Sidebar({
                 {!collapsed && <span className="truncate">{item.label}</span>}
               </div>
               {!collapsed && item.badge && (
-                <span className="rounded bg-surface-elevated px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground border border-border-subtle">
+                <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-semibold text-primary">
                   {item.badge}
                 </span>
               )}
@@ -121,25 +136,24 @@ export function Sidebar({
 
       {!collapsed && session && (
         <div className="border-t border-border p-3.5 text-xs">
-          <div className="rounded-md border border-border-subtle bg-surface-elevated p-3 space-y-2">
+          <div className="rounded-xl border border-border-subtle bg-surface-elevated p-3.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="flex items-center gap-1.5 font-medium text-foreground">
-                <Lock className="h-3.5 w-3.5 text-primary" />
-                Tenant Isolation
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                Protected Workspace
               </span>
-              <span className="font-mono text-[10px] uppercase text-success">
-                Enforced
+              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-success">
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                Active
               </span>
             </div>
-            <p className="font-mono text-[11px] text-muted-foreground truncate">
-              {session.email || `user:${session.user_id.slice(0, 8)}`}
+            <p className="text-xs font-medium text-foreground truncate">
+              {session.email || "Signed-in Member"}
             </p>
-            <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border-subtle">
-              <span className="flex items-center gap-1">
-                <Database className="h-3 w-3" /> Qdrant + PG
-              </span>
-              <span className="flex items-center gap-1 font-mono">
-                <Sparkles className="h-3 w-3 text-primary" /> Top 60→8→3
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1.5 border-t border-border-subtle">
+              <span className="capitalize">{session.role} Access</span>
+              <span className="font-mono text-[10px] opacity-80">
+                ID: {session.tenant_id.slice(0, 8)}
               </span>
             </div>
           </div>

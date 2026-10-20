@@ -105,23 +105,19 @@ export function DocumentList({
   const handleSingleReindex = async (doc: DocumentResponse) => {
     setBusyAction(`reindex-${doc.id}`);
     try {
-      const res = await reindex_document(doc.id);
+      await reindex_document(doc.id);
       pushToast({
         tone: "success",
-        title: "Reindex Queued (202 Accepted)",
-        description: `"${doc.title}" queued with job_id ${res.job_id.slice(
-          0,
-          8
-        )}.`,
+        title: "Re-indexing Started",
+        description: `"${doc.title}" has been queued for background re-indexing.`,
       });
       onRefresh();
     } catch (error) {
       if (error instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Reindex Failed (${error.code})`,
+          title: "Unable to Re-index Document",
           description: error.message,
-          requestId: error.request_id,
         });
       }
     } finally {
@@ -135,8 +131,8 @@ export function DocumentList({
       await delete_document(doc.id);
       pushToast({
         tone: "success",
-        title: "Document Deleted",
-        description: `"${doc.title}" purged from Qdrant, MinIO, Redis cache, and marked deleted in PostgreSQL.`,
+        title: "Document Removed",
+        description: `"${doc.title}" has been removed from your workspace knowledge base.`,
       });
       setSelectedIds((prev) => {
         const next = new Set(prev);
@@ -148,9 +144,8 @@ export function DocumentList({
       if (error instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Delete Failed (${error.code})`,
+          title: "Unable to Remove Document",
           description: error.message,
-          requestId: error.request_id,
         });
       }
     } finally {
@@ -166,9 +161,9 @@ export function DocumentList({
       await Promise.all(ids.map((id) => reindex_document(id)));
       pushToast({
         tone: "success",
-        title: `Queued ${ids.length} Reindex Jobs`,
+        title: `Re-indexing ${ids.length} Documents`,
         description:
-          "All selected documents have been queued for background reindexing.",
+          "All selected documents have been queued for background processing.",
       });
       setSelectedIds(new Set());
       onRefresh();
@@ -176,9 +171,8 @@ export function DocumentList({
       if (error instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Bulk Reindex Error (${error.code})`,
+          title: "Bulk Re-index Error",
           description: error.message,
-          requestId: error.request_id,
         });
       }
     } finally {
@@ -194,9 +188,9 @@ export function DocumentList({
       await Promise.all(ids.map((id) => delete_document(id)));
       pushToast({
         tone: "success",
-        title: `Deleted ${ids.length} Documents`,
+        title: `Removed ${ids.length} Documents`,
         description:
-          "All selected documents were removed from Qdrant, MinIO, and active corpus.",
+          "All selected documents have been removed from your workspace.",
       });
       setSelectedIds(new Set());
       onRefresh();
@@ -204,9 +198,8 @@ export function DocumentList({
       if (error instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Bulk Delete Error (${error.code})`,
+          title: "Bulk Delete Error",
           description: error.message,
-          requestId: error.request_id,
         });
       }
     } finally {
@@ -223,7 +216,7 @@ export function DocumentList({
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search title, file, tag, department..."
+              placeholder="Search by title, filename, tag, or department..."
               className="pl-9"
             />
           </div>
@@ -231,14 +224,14 @@ export function DocumentList({
           <select
             value={statusFilter}
             onChange={(e) => onStatusFilterChange(e.target.value)}
-            aria-label="Filter documents by backend status"
-            className="h-10 rounded-md border border-border bg-surface-elevated px-3 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            aria-label="Filter documents by status"
+            className="h-10 rounded-lg border border-border bg-surface-elevated px-3 text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
-            <option value="">All Active Statuses</option>
-            <option value="ready">ready</option>
-            <option value="processing">processing</option>
-            <option value="failed">failed</option>
-            <option value="deprecated">deprecated</option>
+            <option value="">All Statuses</option>
+            <option value="ready">Ready</option>
+            <option value="processing">Processing</option>
+            <option value="failed">Failed</option>
+            <option value="deprecated">Deprecated</option>
           </select>
         </div>
 
@@ -252,7 +245,7 @@ export function DocumentList({
                 onClick={handleBulkReindex}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
-                Reindex ({selectedIds.size})
+                Re-index ({selectedIds.size})
               </Button>
               <Button
                 variant="danger"
@@ -261,7 +254,7 @@ export function DocumentList({
                 onClick={handleBulkDelete}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete ({selectedIds.size})
+                Remove ({selectedIds.size})
               </Button>
             </>
           )}
@@ -273,18 +266,18 @@ export function DocumentList({
       </div>
 
       {filteredAndSorted.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-surface p-12 text-center">
-          <FileText className="h-10 w-10 text-muted-foreground/60" />
-          <h3 className="mt-3 font-display text-base font-semibold">
-            No Documents Match Filter
+        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-surface p-12 text-center">
+          <FileText className="h-10 w-10 text-muted-foreground/50" />
+          <h3 className="mt-3 font-display text-base font-semibold text-foreground">
+            No Matching Documents Found
           </h3>
           <p className="mt-1 max-w-md text-xs text-muted-foreground">
-            Upload a PDF, DOCX, PPTX, Markdown, HTML, or TXT file above to index
-            parent/child chunks into Qdrant and PostgreSQL.
+            Upload a PDF, Word, PowerPoint, Markdown, HTML, or text document
+            above to add it to your workspace knowledge base.
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface shadow-panel">
+        <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-panel">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-b border-border bg-surface-muted/60 text-xs font-medium text-muted-foreground">
@@ -322,14 +315,14 @@ export function DocumentList({
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
-                <th className="px-4 py-3">Metadata & Tags</th>
+                <th className="px-4 py-3">Classification & Tags</th>
                 <th className="px-4 py-3">
                   <button
                     type="button"
                     onClick={() => toggleSort("version")}
                     className="inline-flex items-center gap-1 hover:text-foreground"
                   >
-                    Version / Stats
+                    Version & Size
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
@@ -339,7 +332,7 @@ export function DocumentList({
                     onClick={() => toggleSort("created_at")}
                     className="inline-flex items-center gap-1 hover:text-foreground"
                   >
-                    Created
+                    Added
                     <ArrowUpDown className="h-3 w-3" />
                   </button>
                 </th>
@@ -366,13 +359,13 @@ export function DocumentList({
                   <td className="px-4 py-3.5">
                     <Link
                       href={`/documents/${doc.id}`}
-                      className="font-medium text-foreground hover:text-primary flex items-center gap-1.5"
+                      className="font-medium text-foreground hover:text-primary flex items-center gap-1.5 transition-colors"
                     >
                       <span>{doc.title}</span>
                       <ExternalLink className="h-3 w-3 opacity-60" />
                     </Link>
-                    <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                      {doc.file_name} · {doc.mime_type}
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      {doc.file_name}
                     </p>
                   </td>
                   <td className="px-4 py-3.5">
@@ -405,11 +398,15 @@ export function DocumentList({
                         )}
                     </div>
                   </td>
-                  <td className="px-4 py-3.5 font-mono text-xs text-muted-foreground">
-                    <div>v{doc.version}</div>
+                  <td className="px-4 py-3.5 text-xs text-muted-foreground">
+                    <div className="font-medium text-foreground">
+                      v{doc.version}
+                    </div>
                     <div className="text-[11px]">
                       {doc.page_count !== null
-                        ? `${doc.page_count}p`
+                        ? `${doc.page_count} ${
+                            doc.page_count === 1 ? "page" : "pages"
+                          }`
                         : "—"}{" "}
                       ·{" "}
                       {doc.char_count !== null
@@ -424,7 +421,7 @@ export function DocumentList({
                     <div className="inline-flex items-center gap-1.5">
                       <Link href={`/documents/${doc.id}`}>
                         <Button variant="ghost" size="sm">
-                          Inspect
+                          View
                         </Button>
                       </Link>
                       {canManage && (
@@ -434,7 +431,7 @@ export function DocumentList({
                             size="sm"
                             isLoading={busyAction === `reindex-${doc.id}`}
                             onClick={() => handleSingleReindex(doc)}
-                            title="POST /api/v1/documents/{id}/reindex"
+                            title="Re-index document"
                           >
                             <RefreshCw className="h-3 w-3" />
                           </Button>
@@ -444,7 +441,7 @@ export function DocumentList({
                             isLoading={busyAction === `delete-${doc.id}`}
                             onClick={() => handleSingleDelete(doc)}
                             className="text-danger hover:text-danger"
-                            title="DELETE /api/v1/documents/{id}"
+                            title="Remove document"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>

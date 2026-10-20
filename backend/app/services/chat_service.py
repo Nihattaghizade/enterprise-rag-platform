@@ -8,6 +8,7 @@ from typing import Any, Optional
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from redis.asyncio import Redis
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import (
@@ -17,7 +18,9 @@ from app.config import (
     get_settings,
 )
 from app.core.rate_limit import check_rate_limit, get_redis_client
+from app.db.models import QueryLog
 from app.db.repositories.audit import AuditRepository
+from app.db.repositories.tenants import TenantRepository
 from app.generation.grounding import check_grounding
 from app.generation.llm import stream_answer
 from app.generation.prompts import INSUFFICIENT_EVIDENCE_RESPONSE
@@ -82,7 +85,25 @@ async def run_chat_query(
         # 1. Per-user & per-tenant Redis rate limit
         await check_rate_limit(rclient, user_id=user_id, tenant_id=tenant_id, scope="api")
 
-        # 2. Check Redis query-answer cache
+        # 2. Enforce sandbox evaluation limit (max 10 questions)
+        tenant_repo = TenantRepository(session)
+        tenant = await tenant_repo.get_by_id(tenant_id)
+        if tenant and tenant.settings and tenant.settings.get("is_sandbox"):
+            max_questions = int(tenant.settings.get("max_questions", 10))
+            count_stmt = select(func.count(QueryLog.id)).where(QueryLog.tenant_id == tenant_id)
+            res = await session.execute(count_stmt)
+            current_queries = res.scalar_one() or 0
+            if current_queries >= max_questions:
+                yield format_sse_event(
+                    "error",
+                    {
+                        "code": "trial_question_limit_reached",
+                        "message": f"Trial limit reached: maximum of {max_questions} questions allowed for evaluation accounts.",
+                    },
+                )
+                return
+
+        # 3. Check Redis query-answer cache
         cache_key = build_query_cache_key(tenant_id, query, tags=tags, doc_ids=doc_ids)
         cached_raw = await rclient.get(cache_key)
         if cached_raw is not None:
@@ -109,7 +130,7 @@ async def run_chat_query(
             await session.commit()
             return
 
-        # 3. Tenant-filtered hybrid Qdrant retrieval (top 60) + semantic-first policy
+        # 4. Tenant-filtered hybrid Qdrant retrieval (top 60) + semantic-first policy
         retriever = TenantHybridRetriever(
             tenant_id=tenant_id,
             candidate_limit=HYBRID_CANDIDATE_LIMIT,
@@ -118,7 +139,7 @@ async def run_chat_query(
         )
         candidates = await retriever.aget_candidates(query)
 
-        # 4. BGE reranking (top 60 -> top 8)
+        # 5. BGE reranking (top 60 -> top 8)
         reranked = await rerank_candidates(
             query=query,
             candidates=candidates,
@@ -126,7 +147,7 @@ async def run_chat_query(
             redis_client=rclient,
         )
 
-        # 5. Resolve and deduplicate parent contexts (up to 3)
+        # 6. Resolve and deduplicate parent contexts (up to 3)
         assembled_contexts = await assemble_parent_contexts(
             session=session,
             tenant_id=tenant_id,
@@ -134,7 +155,7 @@ async def run_chat_query(
             max_parents=MAX_PARENT_CONTEXTS_PER_ANSWER,
         )
 
-        # 6. Emit citation SSE events for assembled parent contexts
+        # 7. Emit citation SSE events for assembled parent contexts
         citations_payload: list[dict[str, Any]] = []
         for ctx in assembled_contexts:
             cit_item = {
@@ -147,7 +168,7 @@ async def run_chat_query(
             citations_payload.append(cit_item)
             yield format_sse_event("citation", cit_item)
 
-        # 7. Stream LLM answer tokens
+        # 8. Stream LLM answer tokens
         collected_tokens: list[str] = []
         async for token in stream_answer(query, assembled_contexts, chat_model=chat_model):
             collected_tokens.append(token)
@@ -155,7 +176,7 @@ async def run_chat_query(
 
         full_answer = "".join(collected_tokens).strip()
 
-        # 8. Optional grounding check behind feature flag (Section 8)
+        # 9. Optional grounding check behind feature flag (Section 8)
         grounding_passed = True
         if settings.ENABLE_GROUNDING_CHECK and assembled_contexts:
             grounding_res = check_grounding(full_answer, assembled_contexts)
@@ -171,7 +192,7 @@ async def run_chat_query(
             },
         )
 
-        # 9. Cache safe grounded result in Redis (Section 5.4C)
+        # 10. Cache safe grounded result in Redis (Section 5.4C)
         if grounding_passed and full_answer and full_answer != INSUFFICIENT_EVIDENCE_RESPONSE:
             cache_value = {
                 "answer": full_answer,
@@ -186,7 +207,7 @@ async def run_chat_query(
                 ex=settings.QUERY_CACHE_TTL_SECONDS,
             )
 
-        # 10. Persist QueryLog and UsageRecord
+        # 11. Persist QueryLog and UsageRecord
         query_toks = count_tokens(query)
         context_toks = sum(c.token_count for c in assembled_contexts)
         answer_toks = count_tokens(full_answer)

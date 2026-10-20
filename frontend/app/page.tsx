@@ -6,14 +6,16 @@ import {
   Activity,
   ArrowRight,
   Building2,
+  Check,
   CheckCircle2,
+  Copy,
   Database,
+  FileSearch,
   FileText,
   Layers,
   Lock,
   MessageSquare,
   RefreshCw,
-  Server,
   ShieldCheck,
   Sparkles,
   UploadCloud,
@@ -48,6 +50,7 @@ function AuthenticatedBentoDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [liveness, setLiveness] = useState<string>("checking");
   const [readiness, setReadiness] = useState<string>("checking");
+  const [copiedTenantId, setCopiedTenantId] = useState(false);
 
   const fetchWorkspaceData = useCallback(async () => {
     setIsLoading(true);
@@ -63,9 +66,9 @@ function AuthenticatedBentoDashboard() {
       setReadiness(readyRes.status);
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        setError(`${err.message} (${err.code})`);
+        setError(err.message);
       } else {
-        setError("Failed to load workspace telemetry from backend.");
+        setError("Unable to load workspace telemetry right now.");
       }
     } finally {
       setIsLoading(false);
@@ -85,110 +88,139 @@ function AuthenticatedBentoDashboard() {
     (acc, doc) => acc + (doc.char_count ?? 0),
     0
   );
+  const isHealthy = liveness === "ok" && readiness === "ready";
+
+  const handleCopyTenantId = async () => {
+    if (!session?.tenant_id) return;
+    await navigator.clipboard.writeText(session.tenant_id);
+    setCopiedTenantId(true);
+    window.setTimeout(() => setCopiedTenantId(false), 1800);
+  };
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="mx-auto max-w-7xl space-y-6 p-6 sm:p-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <Badge variant="primary" className="mb-2 font-mono uppercase">
-            Tenant Workspace Active
-          </Badge>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight">
-            Workspace Intelligence Bento
+          <div className="flex items-center gap-2 mb-2">
+            <Badge variant="primary" className="uppercase tracking-wider">
+              Workspace Overview
+            </Badge>
+            <span className="text-xs text-muted-foreground capitalize">
+              · {session?.role} Access
+            </span>
+          </div>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-foreground">
+            Knowledge Intelligence Hub
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Real-time corpus status, Qdrant index readiness, and multi-tenant
-            session scope derived from PostgreSQL.
+            Monitor indexed knowledge sources, active processing pipelines, and
+            launch verified AI research sessions.
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
           <Button variant="outline" size="sm" onClick={fetchWorkspaceData}>
             <RefreshCw className="h-3.5 w-3.5" />
-            Sync Now
+            Refresh
           </Button>
+          {canWriteDocuments && (
+            <Link href="/documents">
+              <Button variant="secondary" size="sm">
+                <UploadCloud className="h-3.5 w-3.5" />
+                Upload Documents
+              </Button>
+            </Link>
+          )}
           <Link href="/chat">
             <Button variant="primary" size="sm">
               <MessageSquare className="h-3.5 w-3.5" />
-              Launch Grounded Chat
+              Open AI Assistant
             </Button>
           </Link>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-center justify-between rounded-lg border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
+        <div className="flex items-center justify-between rounded-xl border border-danger/40 bg-danger/10 p-4 text-sm text-danger">
           <span>{error}</span>
           <Button variant="outline" size="sm" onClick={fetchWorkspaceData}>
-            Retry
+            Try Again
           </Button>
         </div>
       )}
 
       {isLoading ? (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
-          <Skeleton className="h-32" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
+          <Skeleton className="h-32 rounded-xl" />
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center justify-between">
-                <span>Indexed Ready Documents</span>
+                <span>Searchable Documents</span>
                 <CheckCircle2 className="h-4 w-4 text-success" />
               </CardDescription>
-              <CardTitle className="text-3xl font-mono">{readyCount}</CardTitle>
+              <CardTitle className="text-3xl font-display">
+                {readyCount}
+              </CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              {documents.length} total non-deleted records in tenant
+              {documents.length} total documents in workspace
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center justify-between">
-                <span>Ingestion Queue State</span>
+                <span>Active Indexing Queue</span>
                 <Activity className="h-4 w-4 text-warning" />
               </CardDescription>
-              <CardTitle className="text-3xl font-mono">
+              <CardTitle className="text-3xl font-display">
                 {processingCount}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              {failedCount} failed · auto-polls `/status`
+              {failedCount > 0
+                ? `${failedCount} require attention`
+                : "Live status updates enabled"}
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center justify-between">
-                <span>Extracted Corpus Volume</span>
+                <span>Indexed Knowledge Volume</span>
                 <Database className="h-4 w-4 text-primary" />
               </CardDescription>
-              <CardTitle className="text-3xl font-mono">
+              <CardTitle className="text-3xl font-display">
                 {formatNumber(totalChars)}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              Normalized characters indexed across sections
+              Characters structured across document sections
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader className="pb-2">
               <CardDescription className="flex items-center justify-between">
-                <span>Health & Readiness Probes</span>
-                <Server className="h-4 w-4 text-primary" />
+                <span>Platform Availability</span>
+                <ShieldCheck
+                  className={`h-4 w-4 ${
+                    isHealthy ? "text-success" : "text-warning"
+                  }`}
+                />
               </CardDescription>
-              <CardTitle className="text-xl font-mono uppercase">
-                /health: {liveness} · /ready: {readiness}
+              <CardTitle className="text-xl font-display">
+                {isHealthy ? "All Systems Ready" : "Service Degraded"}
               </CardTitle>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground">
-              PostgreSQL + Redis + Qdrant verified
+              Search index, storage, and AI engine online
             </CardContent>
           </Card>
         </div>
@@ -198,15 +230,14 @@ function AuthenticatedBentoDashboard() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle>Recent Tenant Documents</CardTitle>
+              <CardTitle>Recent Knowledge Sources</CardTitle>
               <CardDescription>
-                Live records from `GET /api/v1/documents` scoped to your JWT
-                membership.
+                Documents uploaded to your isolated workspace environment.
               </CardDescription>
             </div>
             <Link href="/documents">
               <Button variant="outline" size="sm">
-                View Full Table
+                View All Documents
                 <ArrowRight className="h-3.5 w-3.5" />
               </Button>
             </Link>
@@ -214,20 +245,20 @@ function AuthenticatedBentoDashboard() {
           <CardContent>
             {isLoading ? (
               <div className="space-y-2.5">
-                <Skeleton className="h-12" />
-                <Skeleton className="h-12" />
-                <Skeleton className="h-12" />
+                <Skeleton className="h-14" />
+                <Skeleton className="h-14" />
+                <Skeleton className="h-14" />
               </div>
             ) : documents.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border p-8 text-center">
-                <FileText className="mx-auto h-8 w-8 text-muted-foreground/60" />
-                <p className="mt-2 font-medium text-sm">
-                  Your tenant corpus is currently empty
+              <div className="rounded-xl border border-dashed border-border p-10 text-center">
+                <FileText className="mx-auto h-9 w-9 text-muted-foreground/50" />
+                <p className="mt-3 font-medium text-sm text-foreground">
+                  No documents in your knowledge base yet
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
+                <p className="mt-1 text-xs text-muted-foreground max-w-md mx-auto">
                   {canWriteDocuments
-                    ? "Upload your first PDF, DOCX, PPTX, MD, HTML, or TXT document to start querying."
-                    : "Ask a workspace admin or editor to upload documents to this tenant."}
+                    ? "Upload policy manuals, contracts, technical specs, or research reports (PDF, DOCX, PPTX, Markdown, HTML, TXT) to begin asking grounded questions."
+                    : "Ask a workspace administrator or editor to upload documents to this workspace."}
                 </p>
                 {canWriteDocuments && (
                   <Link href="/documents" className="mt-4 inline-block">
@@ -243,17 +274,17 @@ function AuthenticatedBentoDashboard() {
                 {documents.slice(0, 6).map((doc) => (
                   <div
                     key={doc.id}
-                    className="flex items-center justify-between py-3 text-sm"
+                    className="flex items-center justify-between py-3.5 text-sm"
                   >
                     <div className="min-w-0 pr-4">
                       <Link
                         href={`/documents/${doc.id}`}
-                        className="font-medium text-foreground hover:text-primary truncate block"
+                        className="font-medium text-foreground hover:text-primary truncate block transition-colors"
                       >
                         {doc.title}
                       </Link>
-                      <p className="font-mono text-[11px] text-muted-foreground">
-                        {doc.file_name} · v{doc.version} ·{" "}
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        {doc.file_name} · Version {doc.version} ·{" "}
                         {formatDateTime(doc.created_at)}
                       </p>
                     </div>
@@ -272,57 +303,66 @@ function AuthenticatedBentoDashboard() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Authenticated Session Contract</CardTitle>
+            <CardTitle>Workspace Access & Security</CardTitle>
             <CardDescription>
-              Derived from JWT claims and verified against PostgreSQL
-              `memberships`.
+              Your active session profile and workspace permissions.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3 text-xs">
-            <div className="rounded-md border border-border-subtle bg-surface-elevated p-3 space-y-2 font-mono">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">user_id:</span>
-                <span className="truncate max-w-[180px]">
-                  {session?.user_id}
+          <CardContent className="space-y-4 text-xs">
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Signed in as</span>
+                <span className="font-medium text-foreground truncate max-w-[180px]">
+                  {session?.email || "Authenticated User"}
                 </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">tenant_id:</span>
-                <span className="truncate max-w-[180px]">
-                  {session?.tenant_id}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">role:</span>
-                <span className="uppercase text-primary font-bold">
+              <div className="flex items-center justify-between">
+                <span className="text-muted-foreground">Access Role</span>
+                <Badge variant="primary" className="capitalize">
                   {session?.role}
-                </span>
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between pt-1 border-t border-border-subtle">
+                <span className="text-muted-foreground">Workspace ID</span>
+                <button
+                  type="button"
+                  onClick={handleCopyTenantId}
+                  className="inline-flex items-center gap-1.5 font-mono text-[11px] text-foreground hover:text-primary transition-colors"
+                  title="Copy full Workspace ID"
+                >
+                  <span>{session?.tenant_id.slice(0, 12)}…</span>
+                  {copiedTenantId ? (
+                    <Check className="h-3 w-3 text-success" />
+                  ) : (
+                    <Copy className="h-3 w-3 opacity-70" />
+                  )}
+                </button>
               </div>
             </div>
 
-            <div className="space-y-2 pt-2">
+            <div className="space-y-2 pt-1">
               <p className="font-semibold text-foreground">
-                Role Capabilities (`backend/app/core/permissions.py`):
+                Included with your role:
               </p>
-              <ul className="space-y-1.5 text-muted-foreground">
+              <ul className="space-y-2 text-muted-foreground">
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-                  Query `POST /api/v1/chat/stream` (60 req/min rate limit)
+                  Interactive AI research with verified section citations
                 </li>
                 <li className="flex items-center gap-2">
                   <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-                  List & inspect documents + presigned MinIO URLs
+                  Browse knowledge base and download source files
                 </li>
                 {canWriteDocuments && (
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-                    Upload, reindex (`202`), and delete documents
+                    Upload, classify, re-index, and remove documents
                   </li>
                 )}
                 {isAdmin && (
                   <li className="flex items-center gap-2">
                     <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-                    Manage tenants, members & inspect `/metrics`
+                    Provision workspaces, manage team roles, and view telemetry
                   </li>
                 )}
               </ul>
@@ -333,7 +373,7 @@ function AuthenticatedBentoDashboard() {
                 <Link href="/admin/tenants" className="block">
                   <Button variant="secondary" size="sm" className="w-full">
                     <Building2 className="h-3.5 w-3.5" />
-                    Open Tenant & RBAC Console
+                    Manage Workspaces & Team
                   </Button>
                 </Link>
               </div>
@@ -371,11 +411,11 @@ export default function HomePage() {
   if (isLoading) {
     return (
       <div className="mx-auto max-w-7xl space-y-6 p-8">
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <Skeleton className="h-44" />
-          <Skeleton className="h-44" />
-          <Skeleton className="h-44" />
+          <Skeleton className="h-44 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
+          <Skeleton className="h-44 rounded-xl" />
         </div>
       </div>
     );
@@ -390,7 +430,7 @@ export default function HomePage() {
       {/* HERO SECTION */}
       <section className="mx-auto max-w-6xl px-6 pt-16 pb-20">
         <div className="flex flex-col items-start gap-6">
-          <div className="inline-flex items-center gap-2.5 rounded-full border border-border bg-surface-elevated px-3.5 py-1.5 text-xs shadow-panel">
+          <div className="inline-flex items-center gap-2.5 rounded-full border border-border bg-surface-elevated/90 px-4 py-1.5 text-xs shadow-panel backdrop-blur-sm">
             <span
               className={
                 liveStatus === "ready"
@@ -400,88 +440,125 @@ export default function HomePage() {
                   : "h-2 w-2 rounded-full bg-danger"
               }
             />
-            <span className="font-mono">
+            <span className="font-medium text-foreground">
               {liveStatus === "ready"
-                ? "Backend Live: FastAPI + PostgreSQL + Qdrant + Redis + MinIO"
+                ? "Veritas Enterprise Intelligence · All Systems Operational"
                 : liveStatus === "probing"
-                ? "Checking /health & /ready..."
-                : "Backend Offline — Start Docker & FastAPI on :8000"}
+                ? "Checking platform status..."
+                : "Platform Services Offline"}
             </span>
           </div>
 
-          <h1 className="font-display text-4xl font-bold tracking-tight sm:text-6xl max-w-4xl leading-[1.08]">
-            Multi-Tenant Enterprise RAG Engineered for{" "}
-            <span className="text-primary">Verifiable Grounding.</span>
+          <h1 className="font-display text-4xl font-bold tracking-tight sm:text-6xl max-w-4xl leading-[1.08] text-foreground">
+            Enterprise Knowledge Intelligence Built on{" "}
+            <span className="text-primary">Verifiable Proof.</span>
           </h1>
 
           <p className="max-w-2xl text-base sm:text-lg text-muted-foreground leading-relaxed">
-            Built strictly on asynchronous FastAPI, PostgreSQL authoritative
-            metadata, private MinIO S3 storage, adaptive legal chunking, Qdrant
-            hybrid dense (`BAAI/bge-m3` 1024-d) + sparse RRF retrieval, BGE
-            cross-encoder reranking, and inline section citations.
+            Transform complex policies, legal agreements, and technical
+            documentation into an instant, citation-backed research assistant.
+            Every answer is strictly grounded in your organization’s private
+            workspace documents—or abstains when evidence is absent.
           </p>
 
-          <div className="flex flex-wrap items-center gap-3 pt-2">
+          <div className="flex flex-wrap items-center gap-3.5 pt-2">
             <Link href="/login">
               <Button variant="primary" size="lg">
-                Sign In to Tenant Workspace
+                Sign In to Workspace
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
             <a href="#how-it-works">
               <Button variant="secondary" size="lg">
-                Inspect Verified Pipeline
+                Explore How It Works
               </Button>
             </a>
           </div>
+
+          <div className="grid grid-cols-1 gap-4 pt-6 sm:grid-cols-3 w-full max-w-3xl">
+            <div className="rounded-xl border border-border-subtle bg-surface/70 px-4 py-3 backdrop-blur-sm">
+              <p className="font-display text-lg font-bold text-foreground">
+                100% Citation-Backed
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Inline document & section references on every claim
+              </p>
+            </div>
+            <div className="rounded-xl border border-border-subtle bg-surface/70 px-4 py-3 backdrop-blur-sm">
+              <p className="font-display text-lg font-bold text-foreground">
+                Strict Tenant Isolation
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Dedicated workspace boundaries across storage & search
+              </p>
+            </div>
+            <div className="rounded-xl border border-border-subtle bg-surface/70 px-4 py-3 backdrop-blur-sm">
+              <p className="font-display text-lg font-bold text-foreground">
+                Hybrid Neural Search
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Semantic + exact keyword fusion with neural reranking
+              </p>
+            </div>
+          </div>
         </div>
 
-        {/* REAL UI COMPONENT PRODUCT PREVIEW */}
-        <div className="mt-14 rounded-xl border border-border bg-surface/90 p-5 sm:p-8 shadow-elevated backdrop-blur-md">
+        {/* INTERACTIVE PRODUCT SHOWCASE */}
+        <div className="mt-14 rounded-2xl border border-border bg-surface/90 p-5 sm:p-8 shadow-elevated backdrop-blur-md">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-subtle pb-4 mb-6">
-            <div className="flex items-center gap-2">
-              <Badge variant="primary" className="font-mono">
-                LIVE COMPONENT PREVIEW
-              </Badge>
-              <span className="font-mono text-xs text-muted-foreground">
-                POST /api/v1/chat/stream · SSE Events: citation → token → done
+            <div className="flex items-center gap-2.5">
+              <div className="flex items-center gap-1.5 mr-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-danger/70" />
+                <span className="h-2.5 w-2.5 rounded-full bg-warning/70" />
+                <span className="h-2.5 w-2.5 rounded-full bg-success/70" />
+              </div>
+              <Badge variant="primary">Interactive Research Preview</Badge>
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                Real-time streaming synthesis with section-level verification
               </span>
             </div>
             <DocumentStatus initialStatus="ready" />
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-            <div className="lg:col-span-3 space-y-4 rounded-lg border border-border-subtle bg-surface-elevated p-4">
-              <p className="font-mono text-xs uppercase text-muted-foreground">
-                Grounded Assistant Output (`generation/prompts.py` contract)
-              </p>
-              <p className="text-sm leading-relaxed">
-                Multi-factor authentication and role-based access control are
-                mandatory for all privileged tenant operations{" "}
-                <span className="inline-flex items-center rounded bg-primary-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-primary border border-primary/25">
+            <div className="lg:col-span-3 space-y-4 rounded-xl border border-border-subtle bg-surface-elevated p-5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-semibold uppercase tracking-wider text-primary">
+                  Verified Assistant Response
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  2 sources cited
+                </span>
+              </div>
+              <p className="text-sm leading-relaxed text-foreground">
+                Multi-factor authentication and role-based access controls are
+                mandatory for all privileged workspace operations{" "}
+                <span className="inline-flex items-center rounded-md bg-primary-muted px-2 py-0.5 font-mono text-[11px] font-medium text-primary border border-primary/25">
                   [doc: Information Security Policy, section: 4.2]
                 </span>
-                . Cross-tenant queries are rejected before vector retrieval{" "}
-                <span className="inline-flex items-center rounded bg-primary-muted px-1.5 py-0.5 font-mono text-[11px] font-medium text-primary border border-primary/25">
-                  [doc: Tenant Isolation Standard, section: 2.1]
+                . Furthermore, every search query is cryptographically scoped to
+                your active organization workspace so data never crosses tenant
+                boundaries{" "}
+                <span className="inline-flex items-center rounded-md bg-primary-muted px-2 py-0.5 font-mono text-[11px] font-medium text-primary border border-primary/25">
+                  [doc: Workspace Isolation Standard, section: 2.1]
                 </span>
                 .
               </p>
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-border-subtle">
+              <div className="flex flex-wrap items-center gap-2 pt-3 border-t border-border-subtle">
                 <Badge variant="success">
                   <ShieldCheck className="h-3 w-3" />
-                  grounded: true (confidence: 0.94)
+                  Verified Grounding (94% Confidence)
                 </Badge>
                 <Badge variant="primary">
                   <Zap className="h-3 w-3" />
-                  cache_hit: false
+                  Sub-second Retrieval
                 </Badge>
               </div>
             </div>
 
             <div className="lg:col-span-2 space-y-2.5">
-              <p className="font-mono text-xs uppercase text-muted-foreground">
-                Rendered by `components/chat/citation-card.tsx`
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Supporting Source Passages
               </p>
               <CitationCard
                 index={0}
@@ -497,9 +574,9 @@ export default function HomePage() {
                 index={1}
                 citation={{
                   doc_id: "00000000-0000-0000-0000-000000000002",
-                  title: "Tenant Isolation Standard",
+                  title: "Workspace Isolation Standard",
                   section_number: "2.1",
-                  section_title: "Mandatory Qdrant Payload Filters",
+                  section_title: "Multi-Tenant Data Boundaries",
                   score: 0.872,
                 }}
               />
@@ -508,109 +585,110 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* CAPABILITY CARDS (STRICTLY BACKEND-VERIFIED) */}
-      <section className="mx-auto max-w-6xl px-6 py-14 border-t border-border-subtle">
+      {/* CORE CAPABILITIES */}
+      <section className="mx-auto max-w-6xl px-6 py-16 border-t border-border-subtle">
         <div className="max-w-2xl">
-          <p className="font-mono text-xs uppercase tracking-wider text-primary">
-            Verified Backend Capabilities
+          <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+            Enterprise-Grade Capabilities
           </p>
-          <h2 className="mt-2 font-display text-3xl font-bold">
-            Every Feature Maps 1:1 to Backend Source Code
+          <h2 className="mt-2 font-display text-3xl font-bold text-foreground">
+            Designed for High-Stakes Knowledge Work
           </h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Every layer of the platform is engineered to preserve document
+            context, maximize retrieval precision, and eliminate unverified AI
+            hallucinations.
+          </p>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
-          <Card>
+        <div className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader>
               <Layers className="h-6 w-6 text-primary mb-1" />
-              <CardTitle>Adaptive Legal Chunking</CardTitle>
+              <CardTitle>Context-Preserving Document Parsing</CardTitle>
               <CardDescription>
-                `backend/app/ingestion/chunking.py:130-169`
+                Hierarchical section & parent-child structure
               </CardDescription>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground leading-relaxed">
-              Sections `&lt;= 2,500` tokens use recursive parent (`1200` target,
-              `1000–1400`) and child (`350` target, `300–400`, `50` overlap)
-              windows. Sections `&gt; 2,500` tokens trigger semantic paragraph
-              grouping by cosine similarity of embeddings.
+              Automatically detects document headings and numbered clauses.
+              Matches fine-grained passages for pinpoint search accuracy while
+              supplying full surrounding sections to the AI for complete context.
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader>
               <Sparkles className="h-6 w-6 text-primary mb-1" />
-              <CardTitle>Hybrid Dense + Sparse RRF</CardTitle>
+              <CardTitle>Hybrid Semantic + Keyword Search</CardTitle>
               <CardDescription>
-                `backend/app/retrieval/hybrid_search.py:21-98`
+                Dual-engine retrieval with Reciprocal Rank Fusion
               </CardDescription>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground leading-relaxed">
-              Queries Qdrant `chunks` collection with 1024-dim dense vectors and
-              CRC32 sparse vectors, fuses top `60` candidates via Reciprocal Rank
-              Fusion (`k=60`), reranks to top `8` children, and deduplicates up
-              to `3` parent contexts.
+              Combines deep conceptual understanding with exact terminology,
+              clause numbers, and acronyms—ensuring critical policy or contract
+              details are never missed.
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader>
               <ShieldCheck className="h-6 w-6 text-primary mb-1" />
-              <CardTitle>Grounding & Citation Verifier</CardTitle>
+              <CardTitle>Automated Grounding Verification</CardTitle>
               <CardDescription>
-                `backend/app/generation/grounding.py:30-78`
+                Strict citation validation & abstention policy
               </CardDescription>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground leading-relaxed">
-              Validates lexical token overlap (`&gt;= 0.20`) and verifies that
-              every `[doc: Title, section: X]` citation matches an assembled
-              parent context, abstaining with `INSUFFICIENT_EVIDENCE_MESSAGE`
-              when unsupported.
+              Verifies that every generated statement is supported by retrieved
+              source sections. When your knowledge base lacks sufficient proof,
+              the assistant transparently abstains instead of guessing.
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader>
-              <Database className="h-6 w-6 text-primary mb-1" />
-              <CardTitle>MinIO S3 + 32 KB Parent Offload</CardTitle>
+              <FileSearch className="h-6 w-6 text-primary mb-1" />
+              <CardTitle>Neural Relevance Reranking</CardTitle>
               <CardDescription>
-                `backend/app/storage/s3_adapter.py:40-177`
+                Cross-encoder precision filtering
               </CardDescription>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground leading-relaxed">
-              Stores originals in `rag-documents` up to `50 MB`. Parent contexts
-              `&lt;= 32 KB` live inline in PostgreSQL `parent_contexts`; larger
-              parents spill to MinIO and are transparently resolved at query
-              time.
+              Evaluates candidate passages against your exact question to
+              surface the highest-signal sections and eliminate redundant
+              clauses before synthesis begins.
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader>
               <Lock className="h-6 w-6 text-primary mb-1" />
-              <CardTitle>Strict Tenant & RBAC Isolation</CardTitle>
+              <CardTitle>Multi-Tenant Role-Based Security</CardTitle>
               <CardDescription>
-                `backend/app/api/deps.py:42-85`
+                Granular Admin, Editor, and Viewer governance
               </CardDescription>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground leading-relaxed">
-              Tenant context is derived solely from verified JWT + PostgreSQL
-              `Membership` (`admin`, `editor`, `viewer`). Every SQL query and
-              Qdrant `Filter` enforces `tenant_id` and `is_active = true`.
+              Isolates every workspace across storage, metadata, and vector
+              indexes. Role-based permissions govern who can query, upload,
+              re-index, or administer team access.
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="transition-all hover:border-primary/30">
             <CardHeader>
               <Zap className="h-6 w-6 text-primary mb-1" />
-              <CardTitle>Redis Caching, Locks & Queues</CardTitle>
+              <CardTitle>Asynchronous Processing & Caching</CardTitle>
               <CardDescription>
-                `backend/app/tasks/queue.py:33-163`
+                Instant uploads & intelligent response acceleration
               </CardDescription>
             </CardHeader>
             <CardContent className="text-xs text-muted-foreground leading-relaxed">
-              Caches query responses, embeddings, and rerank scores in Redis;
-              enforces `60 req/min` chat rate limits; and coordinates background
-              worker ingestion with per-document Redis locks and DLQ retry.
+              Large documents up to 50 MB process seamlessly in the background
+              with live status tracking, while intelligent caching delivers
+              instant responses for recurring team queries.
             </CardContent>
           </Card>
         </div>
@@ -619,94 +697,119 @@ export default function HomePage() {
       {/* HOW IT WORKS */}
       <section
         id="how-it-works"
-        className="mx-auto max-w-6xl px-6 py-14 border-t border-border-subtle"
+        className="mx-auto max-w-6xl px-6 py-16 border-t border-border-subtle"
       >
-        <p className="font-mono text-xs uppercase tracking-wider text-primary">
-          End-to-End Architecture
+        <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+          Workflow Architecture
         </p>
-        <h2 className="mt-2 font-display text-3xl font-bold">
-          How Ingestion & Query Execution Work
+        <h2 className="mt-2 font-display text-3xl font-bold text-foreground">
+          From Raw Documents to Verified Answers
         </h2>
 
         <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
           <Card>
             <CardHeader>
-              <Badge variant="primary" className="w-fit font-mono">
-                FLOW 1 · ASYNC INGESTION (`202 Accepted`)
+              <Badge variant="primary" className="w-fit">
+                Stage 1 · Intelligent Document Ingestion
               </Badge>
               <CardTitle className="mt-2">
-                Upload → MinIO → Worker → Qdrant
+                Upload, Structure & Index in Background
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2.5 text-xs text-muted-foreground font-mono">
-              <p>1. POST /api/v1/documents validates MIME &amp; 50 MB limit</p>
-              <p>2. Original uploaded to MinIO `tenants/&#123;tid&#125;/documents/&#123;did&#125;/original/v1/...`</p>
-              <p>3. PostgreSQL `Document(status=&quot;processing&quot;)` + `AuditLog` committed</p>
-              <p>4. Redis job queued on `rag:&#123;env&#125;:queue:ingestion`</p>
-              <p>5. Worker parses, normalizes (`&gt;= 20` non-ws chars), splits sections, chunks parents/children</p>
-              <p>6. Upserts 1024-d dense + sparse vectors into Qdrant `chunks` and marks `ready`</p>
+            <CardContent className="space-y-2.5 text-xs text-muted-foreground leading-relaxed">
+              <p>
+                <strong className="text-foreground">1. Secure Upload:</strong>{" "}
+                Upload PDF, Word, PowerPoint, Markdown, HTML, or plain-text
+                documents up to 50 MB with department and tag classifications.
+              </p>
+              <p>
+                <strong className="text-foreground">
+                  2. Structural Parsing:
+                </strong>{" "}
+                Background workers extract clean text, preserve section
+                hierarchies, and build linked parent-child context windows.
+              </p>
+              <p>
+                <strong className="text-foreground">3. Hybrid Indexing:</strong>{" "}
+                Passages are indexed with both neural semantic embeddings and
+                keyword signatures, becoming immediately available for search.
+              </p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <Badge variant="primary" className="w-fit font-mono">
-                FLOW 2 · STREAMING RAG (`text/event-stream`)
+              <Badge variant="primary" className="w-fit">
+                Stage 2 · Grounded Real-Time Synthesis
               </Badge>
               <CardTitle className="mt-2">
-                Hybrid Search → Rerank → Grounded SSE
+                Retrieve, Rerank & Stream with Citations
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2.5 text-xs text-muted-foreground font-mono">
-              <p>1. POST /api/v1/chat/stream checks 60/min Redis rate limit &amp; query cache</p>
-              <p>2. Qdrant hybrid search (dense + sparse RRF) retrieves top 60 active tenant chunks</p>
-              <p>3. Cross-encoder reranker scores and retains top 8 child chunks</p>
-              <p>4. Context assembly resolves &amp; deduplicates up to 3 parent contexts</p>
-              <p>5. Streams `event: citation` and live `event: token` chunks</p>
-              <p>6. Runs `verify_grounding()`, logs `QueryLog`, and emits `event: done`</p>
+            <CardContent className="space-y-2.5 text-xs text-muted-foreground leading-relaxed">
+              <p>
+                <strong className="text-foreground">
+                  1. Scoped Hybrid Search:
+                </strong>{" "}
+                Your question searches only your workspace’s active documents,
+                optionally narrowed by custom tags or selected files.
+              </p>
+              <p>
+                <strong className="text-foreground">
+                  2. Reranking & Context Assembly:
+                </strong>{" "}
+                Top candidate passages are reranked for relevance and expanded
+                into complete, deduplicated document sections.
+              </p>
+              <p>
+                <strong className="text-foreground">
+                  3. Verified Streaming:
+                </strong>{" "}
+                Supporting citations arrive first, followed by a live-streamed
+                response and an automated grounding confidence score.
+              </p>
             </CardContent>
           </Card>
         </div>
       </section>
 
       {/* SECURITY & FAQ */}
-      <section className="mx-auto max-w-6xl px-6 py-14 border-t border-border-subtle">
+      <section className="mx-auto max-w-6xl px-6 py-16 border-t border-border-subtle">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
           <div>
-            <p className="font-mono text-xs uppercase tracking-wider text-primary">
-              Security & Compliance
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">
+              Security & Governance
             </p>
-            <h2 className="mt-2 font-display text-2xl font-bold">
-              Zero Cross-Tenant Leakage by Construction
+            <h2 className="mt-2 font-display text-2xl font-bold text-foreground">
+              Defense-in-Depth Workspace Isolation
             </h2>
             <p className="mt-3 text-sm text-muted-foreground leading-relaxed">
-              Client-provided tenant identifiers never grant access on their
-              own. Every API call resolves `AuthContext` from the signed JWT and
-              live PostgreSQL `Membership` record. Cross-tenant resource probes
-              return `404 Not Found` (`assert_tenant_access`) to prevent
-              enumeration.
+              Every organization workspace operates inside a strict security
+              boundary. Access tokens are verified against live membership
+              records on every request, ensuring users can only view, search, or
+              download documents belonging to their authorized workspace.
             </p>
           </div>
 
           <div className="space-y-3">
-            <div className="rounded-lg border border-border bg-surface p-4">
-              <h3 className="font-semibold text-sm">
-                Which file formats are supported in v1?
+            <div className="rounded-xl border border-border bg-surface p-4">
+              <h3 className="font-semibold text-sm text-foreground">
+                Which document formats are supported?
               </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Text extracted from `.pdf`, `.docx`, `.pptx`, `.html`/`.htm`,
-                `.md`, and `.txt` up to 50 MB (`52,428,800` bytes).
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                You can upload PDF, Microsoft Word (.docx), PowerPoint (.pptx),
+                HTML, Markdown (.md), and plain text (.txt) files up to 50 MB
+                per document.
               </p>
             </div>
-            <div className="rounded-lg border border-border bg-surface p-4">
-              <h3 className="font-semibold text-sm">
-                How does authentication work in the browser?
+            <div className="rounded-xl border border-border bg-surface p-4">
+              <h3 className="font-semibold text-sm text-foreground">
+                How does the platform prevent AI hallucinations?
               </h3>
-              <p className="mt-1 text-xs text-muted-foreground">
-                `POST /api/v1/auth/login` returns JWT `access_token` and
-                `refresh_token` in the JSON body AND sets `HttpOnly` cookies.
-                On `401`, the frontend automatically calls `POST
-                /api/v1/auth/refresh` and retries the request.
+              <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                The assistant is restricted to answering solely from retrieved
+                workspace sections, attaches inline section citations to every
+                claim, and runs an automated post-generation grounding check.
               </p>
             </div>
           </div>
@@ -715,11 +818,14 @@ export default function HomePage() {
 
       <footer className="border-t border-border bg-surface py-8 px-6">
         <div className="mx-auto flex max-w-6xl flex-col sm:flex-row items-center justify-between gap-4 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <span className="font-medium text-foreground">
+              Veritas AI · Enterprise Knowledge Intelligence Platform
+            </span>
+          </div>
           <span>
-            Veritas Enterprise RAG Platform · v2 Architecture Baseline
-          </span>
-          <span className="font-mono">
-            FastAPI · Next.js App Router · PostgreSQL · Qdrant · MinIO · Redis
+            End-to-End Encrypted Sessions · Strict Multi-Tenant Isolation
           </span>
         </div>
       </footer>

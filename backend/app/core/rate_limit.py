@@ -11,7 +11,13 @@ from app.core.errors import RateLimitExceededError
 def get_redis_client() -> Redis:
     """Create an async Redis client using RESP2 protocol for universal compatibility."""
     settings = get_settings()
-    return Redis.from_url(settings.REDIS_URL, decode_responses=True, protocol=2)
+    return Redis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        protocol=2,
+        socket_timeout=30.0,
+        socket_connect_timeout=10.0,
+    )
 
 
 def _env_prefix() -> str:

@@ -22,8 +22,10 @@ interface AuthContextValue {
   session: StoredAuthSession | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  canWriteDocuments: boolean; // admin or editor (backend/app/api/documents.py:33,124,142)
-  isAdmin: boolean; // admin (backend/app/api/tenants.py:22,32,48,64,84 & health.py:44)
+  canWriteDocuments: boolean; // superadmin, admin, editor, or trial_viewer
+  isAdmin: boolean; // superadmin or admin
+  isSuperAdmin: boolean; // superadmin platform console access
+  isTrialViewer: boolean; // trial_viewer sandbox account
   signIn: (payload: LoginRequest) => Promise<TokenResponse>;
   signOut: () => Promise<void>;
   refresh_session: () => Promise<TokenResponse | null>;
@@ -98,8 +100,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       isAuthenticated: Boolean(session?.access_token),
       canWriteDocuments:
-        session?.role === "admin" || session?.role === "editor",
-      isAdmin: session?.role === "admin",
+        session?.role === "superadmin" ||
+        session?.role === "admin" ||
+        session?.role === "editor" ||
+        session?.role === "trial_viewer",
+      isAdmin: session?.role === "superadmin" || session?.role === "admin",
+      isSuperAdmin: session?.role === "superadmin",
+      isTrialViewer: session?.role === "trial_viewer",
       signIn,
       signOut,
       refresh_session: handleRefresh,

@@ -71,7 +71,10 @@ async def get_auth_context(
 
     tenant_repo = TenantRepository(session)
 
-    # Derive tenant strictly from verified database Membership (Section 3 Non-negotiable isolation rule)
+    # Check if user has global superadmin privileges
+    all_memberships = await tenant_repo.list_user_memberships(user.id)
+    is_superadmin = any(m.role == "superadmin" and m.status == "active" for m in all_memberships)
+
     requested_tenant_id: Optional[uuid.UUID] = None
     if x_tenant_id:
         try:
@@ -81,6 +84,32 @@ async def get_auth_context(
     elif payload.get("tenant_id"):
         requested_tenant_id = uuid.UUID(str(payload["tenant_id"]))
 
+    if is_superadmin:
+        # Superadmin can inspect any requested tenant or defaults to own primary tenant
+        if requested_tenant_id is not None:
+            tenant = await tenant_repo.get_by_id(requested_tenant_id)
+            if tenant is None:
+                raise ForbiddenError("Target tenant does not exist.", code="tenant_not_found")
+            synthetic_membership = Membership(
+                id=uuid.uuid4(),
+                user_id=user.id,
+                tenant_id=tenant.id,
+                role="superadmin",
+                status="active",
+            )
+            user_id_ctx.set(str(user.id))
+            tenant_id_ctx.set(str(tenant.id))
+            return AuthContext(user=user, tenant=tenant, membership=synthetic_membership)
+        elif all_memberships:
+            primary = all_memberships[0]
+            tenant = await tenant_repo.get_by_id(primary.tenant_id)
+            if tenant is not None:
+                user_id_ctx.set(str(user.id))
+                tenant_id_ctx.set(str(tenant.id))
+                return AuthContext(user=user, tenant=tenant, membership=primary)
+
+    # Standard non-superadmin membership resolution
+    membership: Optional[Membership] = None
     if requested_tenant_id is not None:
         membership = await tenant_repo.get_membership(
             tenant_id=requested_tenant_id,
@@ -92,17 +121,35 @@ async def get_auth_context(
                 code="tenant_access_denied",
             )
     else:
-        memberships = await tenant_repo.list_user_memberships(user.id)
-        if not memberships:
+        active_memberships = [m for m in all_memberships if m.status == "active"]
+        if not active_memberships:
+            pending_memberships = [m for m in all_memberships if m.status == "pending_approval"]
+            if pending_memberships:
+                raise ForbiddenError(
+                    "Your account is awaiting approval from your workspace administrator. You will be able to sign in once approved.",
+                    code="membership_pending_approval",
+                )
             raise ForbiddenError(
                 "User has no active tenant memberships.",
                 code="membership_required",
             )
-        membership = memberships[0]
+        membership = active_memberships[0]
+
+    if membership.status == "pending_approval":
+        raise ForbiddenError(
+            "Your account is awaiting approval from your workspace administrator. You will be able to sign in once approved.",
+            code="membership_pending_approval",
+        )
 
     tenant = await tenant_repo.get_by_id(membership.tenant_id)
     if tenant is None or not tenant.is_active:
         raise ForbiddenError("Tenant is inactive or does not exist.", code="tenant_inactive")
+
+    if tenant.status == "pending":
+        raise ForbiddenError(
+            "The workspace is awaiting approval by a platform superadmin.",
+            code="tenant_pending_approval",
+        )
 
     user_id_ctx.set(str(user.id))
     tenant_id_ctx.set(str(membership.tenant_id))

@@ -8,11 +8,17 @@ import {
   type MemberAddRequest,
   type MemberRoleUpdateRequest,
   type MembershipResponse,
+  type PendingApprovalResponse,
   type RefreshRequest,
   type RoleType,
+  type SignUpRequest,
+  type SignUpResponse,
+  type SuperadminOverviewResponse,
   type TenantCreateRequest,
   type TenantResponse,
   type TokenResponse,
+  type TrialStatusResponse,
+  type WorkspaceOption,
 } from "@/types/api";
 import type {
   DocumentListResponse,
@@ -513,4 +519,144 @@ export async function get_prometheus_metrics(): Promise<string> {
   }
 
   return response.text();
+}
+
+// ============================================================================
+// SIGNUP & PUBLIC WORKSPACE SELECTION (backend/app/api/auth.py)
+// ============================================================================
+
+export async function getPublicWorkspaces(): Promise<WorkspaceOption[]> {
+  return apiFetch<WorkspaceOption[]>("/api/v1/auth/workspaces", {
+    method: "GET",
+    skipAuthRefresh: true,
+  });
+}
+
+export async function signupUser(payload: SignUpRequest): Promise<SignUpResponse> {
+  return apiFetch<SignUpResponse>("/api/v1/auth/signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    skipAuthRefresh: true,
+  });
+}
+
+// ============================================================================
+// TRIAL STATUS & PROGRESS METERS (backend/app/api/tenants.py)
+// ============================================================================
+
+export async function getTrialStatus(tenantId: string): Promise<TrialStatusResponse> {
+  return apiFetch<TrialStatusResponse>(
+    `/api/v1/tenants/${encodeURIComponent(tenantId)}/trial-status`,
+    { method: "GET" }
+  );
+}
+
+// ============================================================================
+// TENANT ADMIN APPROVALS & MEMBER ACTIONS (backend/app/api/tenants.py)
+// ============================================================================
+
+export async function getPendingTenantMembers(
+  tenantId: string
+): Promise<PendingApprovalResponse[]> {
+  return apiFetch<PendingApprovalResponse[]>(
+    `/api/v1/tenants/${encodeURIComponent(tenantId)}/pending-members`,
+    { method: "GET" }
+  );
+}
+
+export async function approveTenantMember(
+  tenantId: string,
+  userId: string
+): Promise<MembershipResponse> {
+  return apiFetch<MembershipResponse>(
+    `/api/v1/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(userId)}/approve`,
+    { method: "POST" }
+  );
+}
+
+export async function rejectTenantMember(
+  tenantId: string,
+  userId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/api/v1/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(userId)}/reject`,
+    { method: "POST" }
+  );
+}
+
+export async function deleteTenantMember(
+  tenantId: string,
+  userId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/api/v1/tenants/${encodeURIComponent(tenantId)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" }
+  );
+}
+
+// ============================================================================
+// SUPERADMIN EXECUTIVE PLATFORM COMMAND CENTER (backend/app/api/superadmin.py)
+// ============================================================================
+
+export async function getSuperadminOverview(): Promise<SuperadminOverviewResponse> {
+  return apiFetch<SuperadminOverviewResponse>("/api/v1/superadmin/overview", {
+    method: "GET",
+  });
+}
+
+export async function getAllTenantsSuperadmin(): Promise<TenantResponse[]> {
+  return apiFetch<TenantResponse[]>("/api/v1/superadmin/tenants", {
+    method: "GET",
+  });
+}
+
+export async function createTenantSuperadmin(
+  payload: TenantCreateRequest
+): Promise<TenantResponse> {
+  return apiFetch<TenantResponse>("/api/v1/superadmin/tenants", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function approveTenantSuperadmin(tenantId: string): Promise<TenantResponse> {
+  return apiFetch<TenantResponse>(
+    `/api/v1/superadmin/tenants/${encodeURIComponent(tenantId)}/approve`,
+    { method: "POST" }
+  );
+}
+
+export async function rejectTenantSuperadmin(
+  tenantId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/api/v1/superadmin/tenants/${encodeURIComponent(tenantId)}/reject`,
+    { method: "POST" }
+  );
+}
+
+export async function getAllPendingMembersSuperadmin(): Promise<PendingApprovalResponse[]> {
+  return apiFetch<PendingApprovalResponse[]>("/api/v1/superadmin/pending-members", {
+    method: "GET",
+  });
+}
+
+export async function superadminApproveMember(
+  membershipId: string
+): Promise<PendingApprovalResponse> {
+  return apiFetch<PendingApprovalResponse>(
+    `/api/v1/superadmin/members/${encodeURIComponent(membershipId)}/approve`,
+    { method: "POST" }
+  );
+}
+
+export async function superadminRejectMember(
+  membershipId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/api/v1/superadmin/members/${encodeURIComponent(membershipId)}/reject`,
+    { method: "POST" }
+  );
 }

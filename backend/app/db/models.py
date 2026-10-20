@@ -3,6 +3,7 @@ from datetime import date, datetime
 from typing import Any, Optional
 
 from sqlalchemy import (
+    ARRAY,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -11,22 +12,22 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    Numeric,
+    SmallInteger,
     Text,
     UniqueConstraint,
     func,
-    text as sql_text,
+    text as sa_text,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, INET, JSONB, UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.dialects.postgresql import INET, JSONB, UUID
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
-    """Base declarative class for all PostgreSQL ORM models."""
+    pass
 
 
 class TimestampMixin:
-    """Section 5.4A: All tables include created_at and updated_at timestamp columns."""
-
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -41,55 +42,94 @@ class TimestampMixin:
 
 
 class User(Base, TimestampMixin):
-    """Section 5.4A: users table."""
-
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
-    email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(
+        Text,
+        unique=True,
+        nullable=False,
+        index=True,
+    )
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=sql_text("true")
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=sa_text("true"),
     )
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
+    )
+
+    memberships: Mapped[list["Membership"]] = relationship(
+        "Membership",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
 
 class Tenant(Base, TimestampMixin):
-    """Section 5.4A: tenants table."""
-
     __tablename__ = "tenants"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    slug: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    slug: Mapped[str] = mapped_column(
+        Text,
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="active",
+        server_default=sa_text("'active'"),
+    )
     settings: Mapped[dict[str, Any]] = mapped_column(
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
     )
     is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True, server_default=sql_text("true")
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default=sa_text("true"),
+    )
+
+    memberships: Mapped[list["Membership"]] = relationship(
+        "Membership",
+        back_populates="tenant",
+        cascade="all, delete-orphan",
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        "Document",
+        back_populates="tenant",
+        cascade="all, delete-orphan",
     )
 
 
 class Membership(Base, TimestampMixin):
-    """Section 5.4A: memberships table."""
-
     __tablename__ = "memberships"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -102,22 +142,32 @@ class Membership(Base, TimestampMixin):
         nullable=False,
     )
     role: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="active",
+        server_default=sa_text("'active'"),
+    )
+
+    user: Mapped["User"] = relationship("User", back_populates="memberships")
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="memberships")
 
     __table_args__ = (
         UniqueConstraint("user_id", "tenant_id", name="uq_memberships_user_tenant"),
         Index("idx_memberships_user_id", "user_id"),
         Index("idx_memberships_tenant_id", "tenant_id"),
         Index("idx_memberships_tenant_user", "tenant_id", "user_id"),
+        Index("idx_memberships_status", "status"),
     )
 
 
 class Document(Base, TimestampMixin):
-    """Section 5.4A: documents table."""
-
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     tenant_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -128,6 +178,20 @@ class Document(Base, TimestampMixin):
     file_name: Mapped[str] = mapped_column(Text, nullable=False)
     mime_type: Mapped[str] = mapped_column(Text, nullable=False)
     storage_key: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="processing",
+        server_default=sa_text("'processing'"),
+    )
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=sa_text("1"),
+    )
+    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    char_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     doc_type: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     author: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     department: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -135,54 +199,56 @@ class Document(Base, TimestampMixin):
         ARRAY(Text),
         nullable=False,
         default=list,
-        server_default=sql_text("'{}'::text[]"),
+        server_default=sa_text("'{}'"),
     )
-    version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default=sql_text("1")
-    )
-    status: Mapped[str] = mapped_column(Text, nullable=False)
     language: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    page_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    char_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     uploader_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("users.id", ondelete="RESTRICT"),
+        ForeignKey("users.id"),
         nullable=False,
     )
     deprecated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True),
+        nullable=True,
     )
     deleted_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), nullable=True
+        DateTime(timezone=True),
+        nullable=True,
     )
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
+    )
+
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="documents")
+    parent_contexts: Mapped[list["ParentContext"]] = relationship(
+        "ParentContext",
+        back_populates="document",
+        cascade="all, delete-orphan",
     )
 
     __table_args__ = (
         Index("idx_documents_tenant_id", "tenant_id"),
         Index("idx_documents_tenant_status", "tenant_id", "status"),
+        Index("idx_documents_tenant_created", "tenant_id", "created_at"),
         Index(
-            "idx_documents_tenant_id_status_version",
-            "tenant_id",
-            "status",
-            "version",
+            "idx_documents_tags_gin",
+            "tags",
+            postgresql_using="gin",
         ),
-        Index("idx_documents_uploader_id", "uploader_id"),
     )
 
 
 class ParentContext(Base, TimestampMixin):
-    """Section 5.4A: parent_contexts table."""
-
     __tablename__ = "parent_contexts"
 
     id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, nullable=False
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
     )
     document_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -190,11 +256,11 @@ class ParentContext(Base, TimestampMixin):
         nullable=False,
     )
     section_number: Mapped[str] = mapped_column(Text, nullable=False)
+    section_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     strategy: Mapped[str] = mapped_column(Text, nullable=False)
     text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     storage_key: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
-    section_title: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     start_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     end_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column(
@@ -202,7 +268,12 @@ class ParentContext(Base, TimestampMixin):
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
+    )
+
+    document: Mapped["Document"] = relationship(
+        "Document",
+        back_populates="parent_contexts",
     )
 
     __table_args__ = (
@@ -211,8 +282,11 @@ class ParentContext(Base, TimestampMixin):
             name="ck_parent_contexts_text_or_storage_key",
         ),
         Index("idx_parent_contexts_document_id", "document_id"),
-        Index("idx_parent_contexts_document_strategy", "document_id", "strategy"),
-        Index("idx_parent_contexts_section_number", "section_number"),
+        Index(
+            "idx_parent_contexts_doc_section",
+            "document_id",
+            "section_number",
+        ),
     )
 
 
@@ -243,7 +317,7 @@ class AuditLog(Base, TimestampMixin):
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
     )
     ip_address: Mapped[Optional[str]] = mapped_column(INET, nullable=True)
     user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -278,7 +352,7 @@ class QueryLog(Base, TimestampMixin):
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
     )
     candidate_count: Mapped[int] = mapped_column(Integer, nullable=False)
     reranked_count: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -294,7 +368,7 @@ class QueryLog(Base, TimestampMixin):
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
     )
 
     __table_args__ = (
@@ -319,32 +393,32 @@ class UsageRecord(Base, TimestampMixin):
     )
     date: Mapped[date] = mapped_column(Date, nullable=False)
     embedding_tokens: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0, server_default=sql_text("0")
+        BigInteger, nullable=False, default=0, server_default=sa_text("0")
     )
     rerank_calls: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0, server_default=sql_text("0")
+        BigInteger, nullable=False, default=0, server_default=sa_text("0")
     )
     rerank_pairs: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0, server_default=sql_text("0")
+        BigInteger, nullable=False, default=0, server_default=sa_text("0")
     )
     llm_input_tokens: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0, server_default=sql_text("0")
+        BigInteger, nullable=False, default=0, server_default=sa_text("0")
     )
     llm_output_tokens: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0, server_default=sql_text("0")
+        BigInteger, nullable=False, default=0, server_default=sa_text("0")
     )
     storage_bytes: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, default=0, server_default=sql_text("0")
+        BigInteger, nullable=False, default=0, server_default=sa_text("0")
     )
     document_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0, server_default=sql_text("0")
+        Integer, nullable=False, default=0, server_default=sa_text("0")
     )
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata",
         JSONB,
         nullable=False,
         default=dict,
-        server_default=sql_text("'{}'::jsonb"),
+        server_default=sa_text("'{}'::jsonb"),
     )
 
     __table_args__ = (

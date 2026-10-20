@@ -67,9 +67,9 @@ export default function DocumentDetailPage() {
       setDoc(response);
     } catch (err) {
       if (err instanceof ApiRequestError) {
-        setError(`${err.message} (${err.code})`);
+        setError(err.message);
       } else {
-        setError("Failed to load document details.");
+        setError("Unable to load document details.");
       }
     } finally {
       setIsLoading(false);
@@ -101,8 +101,8 @@ export default function DocumentDetailPage() {
       );
       pushToast({
         tone: "info",
-        title: `Status: ${statusRes.status}`,
-        description: `Version v${statusRes.version} · Updated ${formatDateTime(
+        title: `Status: ${statusRes.status.toUpperCase()}`,
+        description: `Version ${statusRes.version} · Last updated ${formatDateTime(
           statusRes.updated_at
         )}`,
       });
@@ -110,9 +110,8 @@ export default function DocumentDetailPage() {
       if (err instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Status Probe Error (${err.code})`,
+          title: "Unable to Refresh Status",
           description: err.message,
-          requestId: err.request_id,
         });
       }
     } finally {
@@ -124,20 +123,19 @@ export default function DocumentDetailPage() {
     if (!doc) return;
     setIsReindexing(true);
     try {
-      const res = await reindex_document(doc.id);
+      await reindex_document(doc.id);
       pushToast({
         tone: "success",
-        title: "202 Accepted — Reindex Job Queued",
-        description: `Job ${res.job_id} queued on Redis ingestion queue.`,
+        title: "Re-indexing Started",
+        description: `"${doc.title}" is being re-indexed in the background.`,
       });
       await fetchDocumentDetail();
     } catch (err) {
       if (err instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Reindex Failed (${err.code})`,
+          title: "Re-index Failed",
           description: err.message,
-          requestId: err.request_id,
         });
       }
     } finally {
@@ -152,18 +150,16 @@ export default function DocumentDetailPage() {
       await delete_document(doc.id);
       pushToast({
         tone: "success",
-        title: "Document Deleted",
-        description:
-          "Removed from Qdrant chunks, MinIO storage, parent_contexts, and Redis query cache.",
+        title: "Document Removed",
+        description: `"${doc.title}" has been removed from your workspace.`,
       });
       router.push("/documents");
     } catch (err) {
       if (err instanceof ApiRequestError) {
         pushToast({
           tone: "error",
-          title: `Delete Failed (${err.code})`,
+          title: "Unable to Remove Document",
           description: err.message,
-          requestId: err.request_id,
         });
       }
     } finally {
@@ -174,19 +170,19 @@ export default function DocumentDetailPage() {
   if (authLoading || isLoading) {
     return (
       <div className="mx-auto max-w-5xl space-y-4 p-6">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-10 w-48 rounded-lg" />
+        <Skeleton className="h-64 w-full rounded-xl" />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 p-6">
+    <div className="mx-auto max-w-5xl space-y-6 p-6 sm:p-8">
       <div className="flex items-center justify-between">
         <Link href="/documents">
           <Button variant="ghost" size="sm">
             <ArrowLeft className="h-4 w-4" />
-            Back to Tenant Corpus
+            Back to Knowledge Base
           </Button>
         </Link>
 
@@ -196,10 +192,9 @@ export default function DocumentDetailPage() {
             size="sm"
             isLoading={isPollingStatus}
             onClick={handleProbeStatus}
-            title="GET /api/v1/documents/{document_id}/status"
           >
             <RefreshCw className="h-3.5 w-3.5" />
-            Poll `/status`
+            Refresh Status
           </Button>
         </div>
       </div>
@@ -208,12 +203,12 @@ export default function DocumentDetailPage() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center p-12 text-center">
             <AlertCircle className="h-10 w-10 text-danger" />
-            <h2 className="mt-3 font-display text-lg font-semibold">
-              {error || "Document not found."}
+            <h2 className="mt-3 font-display text-lg font-semibold text-foreground">
+              {error || "Document not found"}
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              The requested document does not exist, belongs to another tenant,
-              or has been deleted (`404 Not Found`).
+              This document could not be found in your workspace or has been
+              removed.
             </p>
             <Button
               variant="outline"
@@ -221,142 +216,141 @@ export default function DocumentDetailPage() {
               className="mt-4"
               onClick={fetchDocumentDetail}
             >
-              Retry Request
+              Try Again
             </Button>
           </CardContent>
         </Card>
       ) : (
-        <>
-          <Card>
-            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="space-y-1.5">
-                <div className="flex flex-wrap items-center gap-2.5">
-                  <FileText className="h-5 w-5 text-primary" />
-                  <CardTitle className="text-2xl">{doc.title}</CardTitle>
-                  <DocumentStatus
-                    documentId={doc.id}
-                    initialStatus={doc.status}
-                    autoPoll={doc.status === "processing"}
-                    onStatusResolved={() => fetchDocumentDetail()}
-                  />
-                </div>
-                <CardDescription className="font-mono text-xs">
-                  id: {doc.id} · storage_key: {doc.storage_key}
-                </CardDescription>
+        <Card>
+          <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <FileText className="h-5 w-5 text-primary" />
+                <CardTitle className="text-2xl font-display">
+                  {doc.title}
+                </CardTitle>
+                <DocumentStatus
+                  documentId={doc.id}
+                  initialStatus={doc.status}
+                  autoPoll={doc.status === "processing"}
+                  onStatusResolved={() => fetchDocumentDetail()}
+                />
               </div>
+              <CardDescription className="text-xs">
+                {doc.file_name} · Added {formatDateTime(doc.created_at)}
+              </CardDescription>
+            </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                {doc.download_url && (
-                  <a
-                    href={doc.download_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
+            <div className="flex flex-wrap items-center gap-2">
+              {doc.download_url && (
+                <a
+                  href={doc.download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button variant="secondary" size="sm">
+                    <Download className="h-3.5 w-3.5" />
+                    Download Original
+                  </Button>
+                </a>
+              )}
+
+              {canWriteDocuments && (
+                <>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    isLoading={isReindexing}
+                    onClick={handleReindex}
                   >
-                    <Button variant="secondary" size="sm">
-                      <Download className="h-3.5 w-3.5" />
-                      Presigned MinIO Download
-                    </Button>
-                  </a>
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Re-index Document
+                  </Button>
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    isLoading={isDeleting}
+                    onClick={handleDelete}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Remove
+                  </Button>
+                </>
+              )}
+            </div>
+          </CardHeader>
+
+          <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 pt-4 border-t border-border-subtle text-xs">
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-4">
+              <span className="text-muted-foreground">Source File</span>
+              <p className="mt-1 font-medium text-foreground">
+                {doc.file_name}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {doc.mime_type}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-4">
+              <span className="text-muted-foreground">
+                Version & Content Metrics
+              </span>
+              <p className="mt-1 font-medium text-foreground">
+                Version {doc.version}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                {doc.page_count ?? "—"} pages · {formatNumber(doc.char_count)}{" "}
+                extracted characters
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-4">
+              <span className="text-muted-foreground">Classification</span>
+              <p className="mt-1 font-medium text-foreground">
+                Category: {doc.doc_type || "—"} · Dept:{" "}
+                {doc.department || "—"}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Author: {doc.author || "—"} · Language: {doc.language || "—"}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-4">
+              <span className="text-muted-foreground">Document Identifier</span>
+              <p className="mt-1 font-mono text-[11px] text-foreground truncate">
+                {doc.id}
+              </p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">
+                Workspace Scoped
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-4">
+              <span className="text-muted-foreground">Activity Timestamps</span>
+              <p className="mt-1 text-foreground">
+                Added: {formatDateTime(doc.created_at)}
+              </p>
+              <p className="mt-0.5 text-muted-foreground">
+                Updated: {formatDateTime(doc.updated_at)}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border-subtle bg-surface-elevated p-4">
+              <span className="text-muted-foreground">Search Tags</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                {doc.tags.length === 0 ? (
+                  <span className="text-muted-foreground">No tags assigned</span>
+                ) : (
+                  doc.tags.map((tag) => (
+                    <Badge key={tag} variant="primary">
+                      #{tag}
+                    </Badge>
+                  ))
                 )}
-
-                {canWriteDocuments && (
-                  <>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      isLoading={isReindexing}
-                      onClick={handleReindex}
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" />
-                      Reindex (`v{doc.version + 1}`)
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="sm"
-                      isLoading={isDeleting}
-                      onClick={handleDelete}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                      Delete
-                    </Button>
-                  </>
-                )}
               </div>
-            </CardHeader>
-
-            <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 pt-4 border-t border-border-subtle text-xs">
-              <div className="rounded-md border border-border-subtle bg-surface-elevated p-3.5">
-                <span className="text-muted-foreground">File Name & MIME</span>
-                <p className="mt-1 font-mono font-medium text-foreground">
-                  {doc.file_name}
-                </p>
-                <p className="font-mono text-[11px] text-muted-foreground">
-                  {doc.mime_type}
-                </p>
-              </div>
-
-              <div className="rounded-md border border-border-subtle bg-surface-elevated p-3.5">
-                <span className="text-muted-foreground">
-                  Version & Extracted Metrics
-                </span>
-                <p className="mt-1 font-mono font-medium text-foreground">
-                  Version v{doc.version}
-                </p>
-                <p className="font-mono text-[11px] text-muted-foreground">
-                  Pages: {doc.page_count ?? "—"} · Chars:{" "}
-                  {formatNumber(doc.char_count)}
-                </p>
-              </div>
-
-              <div className="rounded-md border border-border-subtle bg-surface-elevated p-3.5">
-                <span className="text-muted-foreground">
-                  Classification Metadata
-                </span>
-                <p className="mt-1 font-medium text-foreground">
-                  Type: {doc.doc_type || "—"} · Dept: {doc.department || "—"}
-                </p>
-                <p className="text-[11px] text-muted-foreground">
-                  Author: {doc.author || "—"} · Lang: {doc.language || "—"}
-                </p>
-              </div>
-
-              <div className="rounded-md border border-border-subtle bg-surface-elevated p-3.5">
-                <span className="text-muted-foreground">Tenant & Uploader</span>
-                <p className="mt-1 font-mono text-[11px] text-foreground truncate">
-                  tenant_id: {doc.tenant_id}
-                </p>
-                <p className="font-mono text-[11px] text-muted-foreground truncate">
-                  uploader_id: {doc.uploader_id}
-                </p>
-              </div>
-
-              <div className="rounded-md border border-border-subtle bg-surface-elevated p-3.5">
-                <span className="text-muted-foreground">Timestamps</span>
-                <p className="mt-1 text-foreground">
-                  Created: {formatDateTime(doc.created_at)}
-                </p>
-                <p className="text-muted-foreground">
-                  Updated: {formatDateTime(doc.updated_at)}
-                </p>
-              </div>
-
-              <div className="rounded-md border border-border-subtle bg-surface-elevated p-3.5">
-                <span className="text-muted-foreground">Document Tags</span>
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {doc.tags.length === 0 ? (
-                    <span className="text-muted-foreground">No tags</span>
-                  ) : (
-                    doc.tags.map((tag) => (
-                      <Badge key={tag} variant="primary">
-                        #{tag}
-                      </Badge>
-                    ))
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </>
+            </div>
+          </CardContent>
+        </Card>
       )}
     </div>
   );

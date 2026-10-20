@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { FileUp, UploadCloud, X } from "lucide-react";
-import { upload_document } from "@/lib/api";
+import { getTrialStatus, upload_document } from "@/lib/api";
+import { use_auth } from "@/lib/auth";
 import { formatBytes } from "@/lib/utils";
-import { ApiRequestError } from "@/types/api";
+import { ApiRequestError, type TrialStatusResponse } from "@/types/api";
 import {
   ALLOWED_EXTENSIONS,
   MAX_UPLOAD_SIZE_BYTES,
@@ -27,6 +28,8 @@ export function DocumentUpload({
   onUploadAccepted?: (result: DocumentUploadAcceptedResponse) => void;
 }) {
   const { pushToast } = useToast();
+  const { session } = use_auth();
+  const [trialStatus, setTrialStatus] = useState<TrialStatusResponse | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
   const [docType, setDocType] = useState("");
@@ -37,15 +40,30 @@ export function DocumentUpload({
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const fetchTrial = useCallback(async () => {
+    if (session?.tenant_id) {
+      try {
+        const res = await getTrialStatus(session.tenant_id);
+        setTrialStatus(res);
+      } catch {
+        // ignore
+      }
+    }
+  }, [session?.tenant_id]);
+
+  useEffect(() => {
+    fetchTrial();
+  }, [fetchTrial]);
+
   const validateSelectedFile = (candidate: File | null): string | null => {
     if (!candidate) {
       return "Please select a file to upload.";
     }
     if (candidate.size === 0) {
-      return "Uploaded file cannot be empty (code: empty_file).";
+      return "The selected file is empty.";
     }
     if (candidate.size > MAX_UPLOAD_SIZE_BYTES) {
-      return `File exceeds the maximum allowed size of 50 MB (${formatBytes(
+      return `File exceeds the 50 MB size limit (${formatBytes(
         MAX_UPLOAD_SIZE_BYTES
       )}).`;
     }
@@ -54,7 +72,7 @@ export function DocumentUpload({
       lowerName.endsWith(ext)
     );
     if (!matchesExtension) {
-      return `Unsupported file extension. Allowed formats: ${ALLOWED_EXTENSIONS.join(
+      return `Unsupported file format. Supported formats: ${ALLOWED_EXTENSIONS.join(
         ", "
       )}`;
     }
@@ -99,11 +117,8 @@ export function DocumentUpload({
 
       pushToast({
         tone: "success",
-        title: "202 Accepted — Ingestion Queued",
-        description: `"${response.document.title}" stored in MinIO and queued as job ${response.job_id.slice(
-          0,
-          8
-        )}.`,
+        title: "Document Upload Started",
+        description: `"${response.document.title}" is now being indexed in the background.`,
       });
 
       setFile(null);
@@ -112,18 +127,18 @@ export function DocumentUpload({
       setAuthor("");
       setDepartment("");
       setTags("");
+      fetchTrial();
       onUploadAccepted?.(response);
     } catch (error) {
       if (error instanceof ApiRequestError) {
-        setValidationError(`${error.message} (${error.code})`);
+        setValidationError(error.message);
         pushToast({
           tone: "error",
-          title: `Upload Failed (${error.code})`,
+          title: "Upload Failed",
           description: error.message,
-          requestId: error.request_id,
         });
       } else {
-        setValidationError("Unexpected error during document upload.");
+        setValidationError("An unexpected error occurred during upload.");
       }
     } finally {
       setIsSubmitting(false);
@@ -133,41 +148,69 @@ export function DocumentUpload({
   return (
     <Card>
       <CardHeader>
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
             <CardTitle className="flex items-center gap-2">
               <UploadCloud className="h-5 w-5 text-primary" />
-              Ingest New Document
+              Add Document to Knowledge Base
             </CardTitle>
             <CardDescription>
-              Uploads original bytes to MinIO (`rag-documents`), writes
-              PostgreSQL metadata, and queues async adaptive chunking (`202
-              Accepted`).
+              Upload documents to make them searchable by your workspace AI
+              assistant.
             </CardDescription>
           </div>
-          <span className="font-mono text-xs text-muted-foreground">
-            Max 50 MB · TXT, MD, PDF, DOCX, PPTX, HTML
+          <span className="text-xs font-medium text-muted-foreground">
+            Up to 50 MB · PDF, DOCX, PPTX, MD, TXT, HTML
           </span>
         </div>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="rounded-lg border border-dashed border-border bg-surface-elevated p-4">
+          {trialStatus?.is_trial && (
+            <div className="rounded-xl border border-sky-500/30 bg-sky-950/20 p-4">
+              <div className="flex items-center justify-between text-xs font-medium">
+                <span className="text-zinc-200">Evaluation Sandbox Upload Limit</span>
+                <span className="font-mono text-sky-400 font-semibold">
+                  {trialStatus.documents_uploaded} / {trialStatus.max_documents} files
+                </span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-800">
+                <div
+                  className={`h-full transition-all duration-300 ${
+                    trialStatus.documents_uploaded >= trialStatus.max_documents
+                      ? "bg-amber-500"
+                      : "bg-sky-500"
+                  }`}
+                  style={{
+                    width: `${Math.min(
+                      100,
+                      (trialStatus.documents_uploaded / trialStatus.max_documents) * 100
+                    )}%`,
+                  }}
+                />
+              </div>
+              {trialStatus.documents_uploaded >= trialStatus.max_documents && (
+                <p className="mt-2 text-xs text-amber-300 font-medium">
+                  Trial upload limit reached ({trialStatus.documents_uploaded}/{trialStatus.max_documents} files). Contact a workspace administrator to upgrade to an enterprise tier.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="rounded-xl border border-dashed border-border bg-surface-elevated p-4 transition-colors hover:border-primary/40">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <label className="flex cursor-pointer items-center gap-3 text-sm">
-                <span className="flex h-10 w-10 items-center justify-center rounded-md bg-primary-muted text-primary">
+              <label className="flex cursor-pointer items-center gap-3.5 text-sm">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-muted text-primary">
                   <FileUp className="h-5 w-5" />
                 </span>
                 <div>
-                  <span className="font-medium text-foreground">
-                    {file ? file.name : "Choose document file"}
+                  <span className="font-semibold text-foreground">
+                    {file ? file.name : "Select a document file"}
                   </span>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {file
-                      ? `${formatBytes(file.size)} · ${
-                          file.type || "detected by extension"
-                        }`
-                      : "Supported: .pdf, .docx, .pptx, .md, .txt, .html"}
+                      ? `${formatBytes(file.size)}`
+                      : "Click to browse PDF, Word, PowerPoint, Markdown, HTML, or TXT files"}
                   </p>
                 </div>
                 <input
@@ -185,74 +228,74 @@ export function DocumentUpload({
                     setFile(null);
                     setValidationError(null);
                   }}
-                  className="inline-flex items-center gap-1 self-start sm:self-center rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+                  className="inline-flex items-center gap-1 self-start sm:self-center rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <X className="h-3.5 w-3.5" />
-                  Clear
+                  Remove
                 </button>
               )}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              <label className="mb-1 block text-xs font-medium text-foreground">
                 Document Title
               </label>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Information Security Policy v4"
+                placeholder="e.g. Global Information Security Policy"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Document Type (`doc_type`)
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                Document Category
               </label>
               <Input
                 value={docType}
                 onChange={(e) => setDocType(e.target.value)}
-                placeholder="e.g. policy, contract, sop"
+                placeholder="e.g. Policy, Contract, Guide"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Department (`department`)
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                Department
               </label>
               <Input
                 value={department}
                 onChange={(e) => setDepartment(e.target.value)}
-                placeholder="e.g. Legal, Security, Engineering"
+                placeholder="e.g. Legal, Security, HR"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Author (`author`)
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                Author / Owner
               </label>
               <Input
                 value={author}
                 onChange={(e) => setAuthor(e.target.value)}
-                placeholder="e.g. Compliance Office"
+                placeholder="e.g. Security Governance Team"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
+              <label className="mb-1 block text-xs font-medium text-foreground">
                 Tags (comma-separated)
               </label>
               <Input
                 value={tags}
                 onChange={(e) => setTags(e.target.value)}
-                placeholder="security, iso27001, access-control"
+                placeholder="security, compliance, access-control"
               />
             </div>
 
             <div>
-              <label className="mb-1 block text-xs font-medium text-muted-foreground">
-                Language (`language`)
+              <label className="mb-1 block text-xs font-medium text-foreground">
+                Language
               </label>
               <Input
                 value={language}
@@ -263,7 +306,7 @@ export function DocumentUpload({
           </div>
 
           {validationError && (
-            <div className="rounded-md border border-danger/40 bg-danger/10 px-3.5 py-2.5 text-xs text-danger">
+            <div className="rounded-lg border border-danger/40 bg-danger/10 px-3.5 py-2.5 text-xs text-danger">
               {validationError}
             </div>
           )}
@@ -273,10 +316,15 @@ export function DocumentUpload({
               type="submit"
               variant="primary"
               isLoading={isSubmitting}
-              disabled={!file}
+              disabled={
+                !file ||
+                (trialStatus?.is_trial
+                  ? trialStatus.documents_uploaded >= trialStatus.max_documents
+                  : false)
+              }
             >
               <UploadCloud className="h-4 w-4" />
-              Upload & Queue Ingestion
+              Upload & Index Document
             </Button>
           </div>
         </form>

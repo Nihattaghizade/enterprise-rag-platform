@@ -1,10 +1,4 @@
-// Exact TypeScript mirrors of backend Pydantic schemas in:
-// - backend/app/schemas/auth.py:7-27
-// - backend/app/schemas/tenants.py:8-42
-// - backend/app/core/errors.py:33-38
-// - backend/app/core/permissions.py:6
-
-export type RoleType = "admin" | "editor" | "viewer";
+export type RoleType = "superadmin" | "admin" | "editor" | "viewer" | "trial_viewer";
 
 export interface ApiErrorEnvelope {
   code: string;
@@ -29,79 +23,125 @@ export class ApiRequestError extends Error {
   }
 }
 
-// Mirrors LoginRequest (backend/app/schemas/auth.py:7-10)
 export interface LoginRequest {
-  email: string; // min_length=3
-  password: string; // min_length=1
+  email: string;
+  password: string;
   tenant_id?: string | null;
 }
 
-// Mirrors RefreshRequest (backend/app/schemas/auth.py:13-14)
 export interface RefreshRequest {
   refresh_token?: string | null;
 }
 
-// Mirrors TokenResponse (backend/app/schemas/auth.py:17-23)
 export interface TokenResponse {
   access_token: string;
   refresh_token: string;
-  token_type: string; // default "bearer"
+  token_type: string;
+  expires_in: number;
   user_id: string;
   tenant_id: string;
   role: RoleType;
 }
 
-// Mirrors LogoutResponse (backend/app/schemas/auth.py:26-27)
 export interface LogoutResponse {
-  status: string; // "logged_out"
+  status: string;
 }
 
-// Mirrors TenantCreateRequest (backend/app/schemas/tenants.py:8-11)
+export interface WorkspaceOption {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+export interface SignUpRequest {
+  email: string;
+  password: string;
+  role: "trial_viewer" | "viewer" | "editor" | "admin";
+  tenant_id?: string | null;
+  new_tenant_name?: string | null;
+}
+
+export interface SignUpResponse {
+  status: string;
+  requires_approval: boolean;
+  message: string;
+  user_id: string;
+  tenant_id?: string | null;
+  role: RoleType;
+}
+
 export interface TenantCreateRequest {
-  name: string; // min_length=2, max_length=120
-  slug: string; // min_length=2, max_length=64
+  name: string;
+  slug: string;
   settings?: Record<string, unknown> | null;
 }
 
-// Mirrors TenantResponse (backend/app/schemas/tenants.py:14-23)
 export interface TenantResponse {
   id: string;
   name: string;
   slug: string;
+  status?: string;
   settings: Record<string, unknown>;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 }
 
-// Mirrors MemberAddRequest (backend/app/schemas/tenants.py:26-29)
 export interface MemberAddRequest {
-  email: string; // min_length=3
-  role: RoleType; // "admin" | "editor" | "viewer"
-  password?: string | null; // min_length=8 when creating a new user account
+  email: string;
+  role: "admin" | "editor" | "viewer";
+  password?: string | null;
 }
 
-// Mirrors MemberRoleUpdateRequest (backend/app/schemas/tenants.py:32-33)
 export interface MemberRoleUpdateRequest {
-  role: RoleType; // "admin" | "editor" | "viewer"
+  role: "admin" | "editor" | "viewer";
 }
 
-// Mirrors MembershipResponse (backend/app/schemas/tenants.py:36-42)
 export interface MembershipResponse {
   id: string;
   user_id: string;
   tenant_id: string;
   role: RoleType;
+  status: string;
+  email?: string | null;
+  tenant_name?: string | null;
   created_at: string;
   updated_at: string;
 }
 
-// Mirrors /health (backend/app/api/health.py:14-17)
-export interface HealthLivenessResponse {
-  status: string; // "ok"
+export interface PendingApprovalResponse {
+  id: string;
+  user_id: string;
+  email: string;
+  role: RoleType;
+  tenant_id: string;
+  tenant_name: string;
+  status: string;
+  created_at: string;
 }
 
-// Mirrors /ready (backend/app/api/health.py:20-39)
+export interface TrialStatusResponse {
+  is_trial: boolean;
+  documents_uploaded: number;
+  max_documents: number;
+  questions_asked: number;
+  max_questions: number;
+}
+
+export interface SuperadminOverviewResponse {
+  total_tenants: number;
+  active_tenants: number;
+  pending_tenants: number;
+  total_users: number;
+  pending_approvals: number;
+  total_documents: number;
+  total_queries: number;
+}
+
+export interface HealthLivenessResponse {
+  status: string;
+}
+
 export interface HealthReadinessResponse {
-  status: string; // "ready"
+  status: string;
 }

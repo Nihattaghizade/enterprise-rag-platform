@@ -4,19 +4,27 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
-  Activity,
   ChevronRight,
   Command,
   LogOut,
   Moon,
   PanelLeft,
   ShieldCheck,
+  Sparkles,
   Sun,
 } from "lucide-react";
 import { use_auth } from "@/lib/auth";
 import { get_health_liveness, get_health_readiness } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+
+const ROUTE_LABELS: Record<string, string> = {
+  chat: "AI Assistant",
+  documents: "Knowledge Base",
+  admin: "Administration",
+  tenants: "Workspaces & Team",
+  login: "Sign In",
+};
 
 export function Navbar({
   onToggleSidebar,
@@ -30,7 +38,9 @@ export function Navbar({
   const pathname = usePathname();
   const router = useRouter();
   const { session, isAuthenticated, signOut } = use_auth();
-  const [healthStatus, setHealthStatus] = useState<"ready" | "degraded" | "checking">("checking");
+  const [healthStatus, setHealthStatus] = useState<
+    "ready" | "degraded" | "checking"
+  >("checking");
 
   useEffect(() => {
     let active = true;
@@ -60,49 +70,86 @@ export function Navbar({
   }, []);
 
   const breadcrumbs = React.useMemo(() => {
+    // Unauthenticated pages (login, signup) should not display duplicate brand crumbs
+    if (!isAuthenticated) {
+      return [];
+    }
+
     const segments = pathname.split("/").filter(Boolean);
     if (segments.length === 0) {
-      return [{ label: isAuthenticated ? "Workspace Overview" : "Platform", href: "/" }];
+      return [{ label: "Workspace", href: "/" }];
     }
+
+    // Direct mapping for admin pages to eliminate non-existent intermediate "Administration" crumb
+    if (pathname.startsWith("/admin/super")) {
+      return [
+        { label: "Workspace", href: "/" },
+        { label: "Platform Console", href: "/admin/super" },
+      ];
+    }
+    if (pathname.startsWith("/admin/tenants")) {
+      return [
+        { label: "Workspace", href: "/" },
+        { label: "Workspace Admin", href: "/admin/tenants" },
+      ];
+    }
+
+    // Filter out intermediate "admin" segment which has no UI page
+    const filteredSegments = segments.filter((s) => s.toLowerCase() !== "admin");
+
     return [
       { label: "Workspace", href: "/" },
-      ...segments.map((segment, index) => {
+      ...filteredSegments.map((segment, index) => {
         const href = "/" + segments.slice(0, index + 1).join("/");
-        const formatted =
-          segment.length > 20
-            ? `${segment.slice(0, 8)}…`
-            : segment.charAt(0).toUpperCase() + segment.slice(1);
+        const mapped = ROUTE_LABELS[segment.toLowerCase()];
+        const formatted = mapped
+          ? mapped
+          : segment.length > 20
+          ? "Document Details"
+          : segment.charAt(0).toUpperCase() + segment.slice(1);
         return { label: formatted, href };
       }),
     ];
   }, [pathname, isAuthenticated]);
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/85 px-4 backdrop-blur-md">
+    <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/85 px-4 sm:px-6 backdrop-blur-md">
       <div className="flex items-center gap-3">
-        {isAuthenticated && (
+        {isAuthenticated ? (
           <button
             type="button"
             onClick={onToggleSidebar}
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
             aria-label="Toggle navigation sidebar"
           >
             <PanelLeft className="h-4 w-4" />
           </button>
+        ) : (
+          <Link href="/" className="flex items-center gap-2 mr-2">
+            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Sparkles className="h-3.5 w-3.5" />
+            </div>
+            <span className="font-display text-sm font-semibold text-foreground">
+              Veritas AI
+            </span>
+          </Link>
         )}
 
-        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs">
+        <nav
+          aria-label="Breadcrumb"
+          className="flex items-center gap-1.5 text-xs"
+        >
           {breadcrumbs.map((crumb, idx) => (
             <React.Fragment key={crumb.href}>
               {idx > 0 && (
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/60" />
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
               )}
               <Link
                 href={crumb.href}
                 className={
                   idx === breadcrumbs.length - 1
                     ? "font-medium text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground transition-colors hover:text-foreground"
                 }
               >
                 {crumb.label}
@@ -116,18 +163,18 @@ export function Navbar({
         <button
           type="button"
           onClick={onOpenCommandPalette}
-          className="hidden sm:inline-flex items-center gap-2.5 rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+          className="hidden sm:inline-flex items-center gap-2.5 rounded-lg border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
         >
           <Command className="h-3.5 w-3.5" />
-          <span>Command</span>
+          <span>Quick Search</span>
           <kbd className="rounded bg-surface-muted px-1.5 py-0.5 font-mono text-[10px]">
             Ctrl+K
           </kbd>
         </button>
 
         <div
-          className="hidden md:flex items-center gap-1.5 rounded-md border border-border-subtle bg-surface-elevated px-2.5 py-1 text-[11px]"
-          title="Live status from GET /health & GET /ready"
+          className="hidden md:flex items-center gap-2 rounded-full border border-border-subtle bg-surface-elevated px-3 py-1 text-[11px]"
+          title="Platform Service Status"
         >
           <span
             className={
@@ -138,34 +185,28 @@ export function Navbar({
                 : "h-2 w-2 rounded-full bg-danger"
             }
           />
-          <span className="font-mono text-muted-foreground">
+          <span className="font-medium text-muted-foreground">
             {healthStatus === "ready"
-              ? "API + DB + Qdrant + Redis Ready"
+              ? "All Systems Operational"
               : healthStatus === "checking"
-              ? "Probing /ready..."
-              : "Backend Degraded"}
+              ? "Connecting..."
+              : "Service Degraded"}
           </span>
         </div>
 
         {isAuthenticated && session && (
           <div className="hidden lg:flex items-center gap-2">
-            <Badge variant="primary" className="uppercase font-mono text-[10px]">
+            <Badge variant="primary" className="capitalize text-[11px]">
               <ShieldCheck className="h-3 w-3" />
               {session.role}
             </Badge>
-            <span
-              className="font-mono text-[11px] text-muted-foreground"
-              title={`Tenant UUID: ${session.tenant_id}`}
-            >
-              tenant:{session.tenant_id.slice(0, 8)}
-            </span>
           </div>
         )}
 
         <button
           type="button"
           onClick={onToggleTheme}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-subtle text-muted-foreground hover:bg-surface-muted hover:text-foreground"
+          className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle text-muted-foreground transition-colors hover:bg-surface-muted hover:text-foreground"
           aria-label="Toggle color theme"
         >
           <Sun className="h-4 w-4 dark:hidden" />
@@ -180,7 +221,6 @@ export function Navbar({
               await signOut();
               router.push("/login");
             }}
-            title="POST /api/v1/auth/logout"
           >
             <LogOut className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Sign Out</span>

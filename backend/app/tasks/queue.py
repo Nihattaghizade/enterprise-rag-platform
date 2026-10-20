@@ -176,7 +176,10 @@ async def dequeue_job(
     try:
         queue_key = get_ingestion_queue_key()
         if timeout_seconds > 0:
-            item = await client.blpop(queue_key, timeout=timeout_seconds)
+            try:
+                item = await client.blpop(queue_key, timeout=timeout_seconds)
+            except TimeoutError:
+                return None
             if not item:
                 return None
             _, raw_payload = item

@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { KeyRound, Lock, ShieldCheck } from "lucide-react";
+import { ShieldCheck, Sparkles } from "lucide-react";
 import { use_auth } from "@/lib/auth";
 import { ApiRequestError } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -17,9 +18,6 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 
-const UUID_REGEX =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 export default function LoginPage() {
   const router = useRouter();
   const { signIn } = use_auth();
@@ -27,32 +25,20 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [tenantId, setTenantId] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [errorCode, setErrorCode] = useState<string | null>(null);
-  const [requestId, setRequestId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
-    setErrorCode(null);
-    setRequestId(null);
 
     const trimmedEmail = email.trim();
     if (trimmedEmail.length < 3) {
-      setErrorMessage("Email must be at least 3 characters (min_length=3).");
+      setErrorMessage("Please enter a valid work email address.");
       return;
     }
     if (password.length < 1) {
-      setErrorMessage("Password is required (min_length=1).");
-      return;
-    }
-    const trimmedTenant = tenantId.trim();
-    if (trimmedTenant.length > 0 && !UUID_REGEX.test(trimmedTenant)) {
-      setErrorMessage(
-        "Optional Tenant ID must be a valid UUID format if provided."
-      );
+      setErrorMessage("Please enter your password.");
       return;
     }
 
@@ -61,26 +47,26 @@ export default function LoginPage() {
       const tokenRes = await signIn({
         email: trimmedEmail,
         password,
-        tenant_id: trimmedTenant.length > 0 ? trimmedTenant : null,
       });
 
       pushToast({
         tone: "success",
-        title: "Authenticated",
-        description: `Signed in with role "${tokenRes.role}" in tenant ${tokenRes.tenant_id.slice(
-          0,
-          8
-        )}.`,
+        title: "Welcome back",
+        description: `Signed in with ${tokenRes.role} access.`,
       });
 
-      router.push("/chat");
+      if (tokenRes.role === "superadmin") {
+        router.push("/admin/super");
+      } else {
+        router.push("/chat");
+      }
     } catch (err) {
       if (err instanceof ApiRequestError) {
         setErrorMessage(err.message);
-        setErrorCode(err.code);
-        setRequestId(err.request_id);
       } else {
-        setErrorMessage("Unable to reach backend authentication service.");
+        setErrorMessage(
+          "Unable to connect to the authentication service. Please check your connection."
+        );
       }
     } finally {
       setIsSubmitting(false);
@@ -89,15 +75,17 @@ export default function LoginPage() {
 
   return (
     <div className="mesh-surface flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-6">
-      <Card className="w-full max-w-md shadow-elevated">
-        <CardHeader className="space-y-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <KeyRound className="h-5 w-5" />
+      <Card className="w-full max-w-md shadow-elevated border-border">
+        <CardHeader className="space-y-2.5 text-center sm:text-left">
+          <div className="mx-auto sm:mx-0 flex h-11 w-11 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
+            <Sparkles className="h-5 w-5" />
           </div>
-          <CardTitle className="text-2xl">Sign In to Workspace</CardTitle>
+          <CardTitle className="text-2xl font-display">
+            Sign in to Veritas AI
+          </CardTitle>
           <CardDescription>
-            Authenticates via `POST /api/v1/auth/login` and establishes your
-            tenant-scoped JWT + `HttpOnly` session cookies.
+            Enter your organization credentials to access your knowledge
+            workspace.
           </CardDescription>
         </CardHeader>
 
@@ -105,7 +93,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-foreground">
-                Work Email (`min_length=3`)
+                Work Email
               </label>
               <Input
                 type="email"
@@ -113,14 +101,15 @@ export default function LoginPage() {
                 minLength={3}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@enterprise.internal"
+                placeholder="name@company.com"
                 autoComplete="email"
+                disabled={isSubmitting}
               />
             </div>
 
             <div>
               <label className="mb-1.5 block text-xs font-medium text-foreground">
-                Password (`min_length=1`)
+                Password
               </label>
               <Input
                 type="password"
@@ -128,55 +117,65 @@ export default function LoginPage() {
                 minLength={1}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
+                placeholder="Enter your password"
                 autoComplete="current-password"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                Target Workspace `tenant_id` (Optional UUID)
-              </label>
-              <Input
-                type="text"
-                value={tenantId}
-                onChange={(e) => setTenantId(e.target.value)}
-                placeholder="Leave blank to use primary tenant membership"
-                className="font-mono text-xs"
+                disabled={isSubmitting}
               />
             </div>
 
             {errorMessage && (
-              <div className="rounded-md border border-danger/40 bg-danger/10 p-3 text-xs text-danger space-y-1">
-                <p className="font-semibold">
-                  {errorMessage} {errorCode ? `(${errorCode})` : ""}
-                </p>
-                {requestId && (
-                  <p className="font-mono text-[10px] opacity-80">
-                    request_id: {requestId}
-                  </p>
-                )}
+              <div
+                className={`rounded-xl border p-3.5 text-xs ${
+                  errorMessage.toLowerCase().includes("awaiting approval") ||
+                  errorMessage.toLowerCase().includes("pending approval")
+                    ? "border-amber-500/40 bg-amber-950/30 text-amber-200"
+                    : "border-danger/40 bg-danger/10 text-danger"
+                }`}
+              >
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 text-base">⚠️</div>
+                  <div className="space-y-1">
+                    <p className="font-semibold">
+                      {errorMessage.toLowerCase().includes("awaiting approval")
+                        ? "Account Pending Approval"
+                        : "Sign In Failed"}
+                    </p>
+                    <p className="leading-relaxed">{errorMessage}</p>
+                  </div>
+                </div>
               </div>
             )}
 
             <Button
               type="submit"
               variant="primary"
-              className="w-full"
-              isLoading={isSubmitting}
+              size="lg"
+              className="w-full mt-2"
+              disabled={isSubmitting}
             >
-              <Lock className="h-4 w-4" />
-              Authenticate & Enter Workspace
+              {isSubmitting ? "Signing in..." : "Sign In to Workspace"}
             </Button>
+
+            <div className="pt-2 text-center">
+              <p className="text-xs text-muted-foreground">
+                Don&apos;t have an account?{" "}
+                <Link
+                  href="/signup"
+                  className="font-medium text-primary hover:underline"
+                >
+                  Create an account
+                </Link>
+              </p>
+            </div>
           </form>
         </CardContent>
 
-        <CardFooter className="flex items-center justify-between text-[11px] text-muted-foreground">
-          <span className="flex items-center gap-1.5">
+        <CardFooter className="flex flex-col gap-3 border-t border-border-subtle bg-surface-muted/30 px-6 py-4 text-center sm:flex-row sm:justify-between sm:text-left">
+          <div className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
             <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-            Bcrypt + HS256 JWT
-          </span>
-          <span className="font-mono">Audit event: auth.login</span>
+            <span>Protected by Role-Based Access Control</span>
+          </div>
+          <span className="text-xs text-muted-foreground">Encrypted Session</span>
         </CardFooter>
       </Card>
     </div>

@@ -8,7 +8,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import auth, chat, documents, health, tenants
+from app.api import auth, chat, documents, health, superadmin, tenants
 from app.config import get_settings
 from app.core.errors import AppError
 from app.db.session import create_engine
@@ -41,6 +41,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(documents.router)
     app.include_router(chat.router)
     app.include_router(tenants.router)
+    app.include_router(superadmin.router)
 
 
 def create_app() -> FastAPI:
