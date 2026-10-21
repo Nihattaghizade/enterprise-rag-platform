@@ -31,7 +31,7 @@ async def upload_document_endpoint(
     department: Optional[str] = Form(default=None),
     tags: Optional[str] = Form(default=None),
     language: Optional[str] = Form(default=None),
-    ctx: AuthContext = Depends(require_roles("admin", "editor")),
+    ctx: AuthContext = Depends(require_roles("admin", "editor", "trial_viewer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> DocumentUploadAcceptedResponse:
     """Section 5.2 & Guardrail #2: Accept file upload, save to MinIO, queue ingestion, and return 202 Accepted."""
@@ -125,7 +125,7 @@ async def get_document_status_endpoint(
 )
 async def reindex_document_endpoint(
     document_id: uuid.UUID,
-    ctx: AuthContext = Depends(require_roles("admin", "editor")),
+    ctx: AuthContext = Depends(require_roles("admin", "editor", "trial_viewer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> DocumentReindexResponse:
     """Queue a document reindex job."""
@@ -145,7 +145,7 @@ async def reindex_document_endpoint(
 @router.delete("/{document_id}", response_model=DocumentResponse)
 async def delete_document_endpoint(
     document_id: uuid.UUID,
-    ctx: AuthContext = Depends(require_roles("admin", "editor")),
+    ctx: AuthContext = Depends(require_roles("admin", "editor", "trial_viewer")),
     session: AsyncSession = Depends(get_db_session),
 ) -> DocumentResponse:
     """Delete a document across Qdrant, MinIO, Redis cache, and PostgreSQL."""

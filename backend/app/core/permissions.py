@@ -36,10 +36,13 @@ def require_role(membership: Membership, allowed_roles: Sequence[str]) -> None:
         return
 
     # Check hierarchical RBAC: if user's role level >= minimum level required by allowed_roles
-    current_level = ROLE_HIERARCHY.get(current_role, 0)
-    min_required_level = min((ROLE_HIERARCHY.get(r, 999) for r in allowed), default=999)
-    if current_level >= min_required_level:
-        return
+    # Exclude trial_viewer from linear hierarchy so trial_viewer permissions don't grant viewer access
+    standard_allowed = [r for r in allowed if r != "trial_viewer"]
+    if standard_allowed:
+        current_level = ROLE_HIERARCHY.get(current_role, 0)
+        min_required_level = min((ROLE_HIERARCHY.get(r, 999) for r in standard_allowed), default=999)
+        if current_level >= min_required_level:
+            return
 
     raise ForbiddenError(
         f"Role '{membership.role}' does not have sufficient permissions. Required one of: {sorted(allowed)}",

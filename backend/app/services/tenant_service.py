@@ -273,15 +273,28 @@ async def list_pending_members(
 async def get_trial_status(
     session: AsyncSession,
     tenant_id: uuid.UUID,
+    user_id: Optional[uuid.UUID] = None,
+    role: Optional[str] = None,
 ) -> TrialStatusResponse:
-    """Check if tenant is in sandbox trial evaluation and return limits and current counters."""
+    """Check if tenant or user is in sandbox trial evaluation and return limits and current counters."""
     tenant_repo = TenantRepository(session)
     tenant = await tenant_repo.get_by_id(tenant_id)
     if tenant is None:
         raise NotFoundError("Tenant not found.")
 
     is_sandbox = bool(tenant.settings and tenant.settings.get("is_sandbox"))
-    if not is_sandbox:
+    is_trial_role = (role == "trial_viewer")
+    if not is_sandbox and not is_trial_role and user_id:
+        membership_stmt = select(Membership).where(
+            Membership.tenant_id == tenant_id,
+            Membership.user_id == user_id,
+        )
+        mem_res = await session.execute(membership_stmt)
+        mem = mem_res.scalar_one_or_none()
+        if mem and mem.role == "trial_viewer":
+            is_trial_role = True
+
+    if not is_sandbox and not is_trial_role:
         return TrialStatusResponse(
             is_trial=False,
             documents_uploaded=0,
@@ -290,8 +303,8 @@ async def get_trial_status(
             max_questions=999999,
         )
 
-    max_docs = int(tenant.settings.get("max_documents", 2))
-    max_questions = int(tenant.settings.get("max_questions", 10))
+    max_docs = int(tenant.settings.get("max_documents", 2)) if (tenant.settings and "max_documents" in tenant.settings) else 2
+    max_questions = int(tenant.settings.get("max_questions", 10)) if (tenant.settings and "max_questions" in tenant.settings) else 10
 
     # Count uploaded documents
     doc_count_stmt = select(func.count(Document.id)).where(

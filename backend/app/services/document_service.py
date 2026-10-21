@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.errors import NotFoundError, ValidationError
 from app.core.rate_limit import check_rate_limit, get_redis_client
-from app.db.models import Document
+from app.db.models import Document, Membership
 from app.db.repositories.documents import DocumentRepository
 from app.db.repositories.tenants import TenantRepository
 from app.ingestion.index import delete_document_points
@@ -97,8 +97,19 @@ async def create_upload(
         # Enforce trial sandbox upload limit (max 2 files)
         tenant_repo = TenantRepository(session)
         tenant = await tenant_repo.get_by_id(tenant_id)
-        if tenant and tenant.settings and tenant.settings.get("is_sandbox"):
-            max_docs = int(tenant.settings.get("max_documents", 2))
+        membership_stmt = select(Membership).where(
+            Membership.tenant_id == tenant_id,
+            Membership.user_id == uploader_id,
+        )
+        mem_res = await session.execute(membership_stmt)
+        user_membership = mem_res.scalar_one_or_none()
+
+        is_trial = bool(
+            (tenant and tenant.settings and tenant.settings.get("is_sandbox"))
+            or (user_membership and user_membership.role == "trial_viewer")
+        )
+        if is_trial:
+            max_docs = int(tenant.settings.get("max_documents", 2)) if (tenant and tenant.settings and "max_documents" in tenant.settings) else 2
             doc_count_stmt = select(func.count(Document.id)).where(
                 Document.tenant_id == tenant_id,
                 Document.deleted_at.is_(None),

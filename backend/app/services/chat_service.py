@@ -18,7 +18,7 @@ from app.config import (
     get_settings,
 )
 from app.core.rate_limit import check_rate_limit, get_redis_client
-from app.db.models import QueryLog
+from app.db.models import Membership, QueryLog
 from app.db.repositories.audit import AuditRepository
 from app.db.repositories.tenants import TenantRepository
 from app.generation.grounding import check_grounding
@@ -88,8 +88,20 @@ async def run_chat_query(
         # 2. Enforce sandbox evaluation limit (max 10 questions)
         tenant_repo = TenantRepository(session)
         tenant = await tenant_repo.get_by_id(tenant_id)
-        if tenant and tenant.settings and tenant.settings.get("is_sandbox"):
-            max_questions = int(tenant.settings.get("max_questions", 10))
+
+        membership_stmt = select(Membership).where(
+            Membership.tenant_id == tenant_id,
+            Membership.user_id == user_id,
+        )
+        mem_res = await session.execute(membership_stmt)
+        user_membership = mem_res.scalar_one_or_none()
+
+        is_trial = bool(
+            (tenant and tenant.settings and tenant.settings.get("is_sandbox"))
+            or (user_membership and user_membership.role == "trial_viewer")
+        )
+        if is_trial:
+            max_questions = int(tenant.settings.get("max_questions", 10)) if (tenant and tenant.settings and "max_questions" in tenant.settings) else 10
             count_stmt = select(func.count(QueryLog.id)).where(QueryLog.tenant_id == tenant_id)
             res = await session.execute(count_stmt)
             current_queries = res.scalar_one() or 0

@@ -75,7 +75,9 @@ async def get_trial_status_endpoint(
 ) -> TrialStatusResponse:
     """Retrieve trial usage counters and limits for sandbox evaluation accounts."""
     assert_tenant_access(ctx.membership, tenant_id)
-    return await tenant_service.get_trial_status(session, tenant_id=tenant_id)
+    return await tenant_service.get_trial_status(
+        session, tenant_id=tenant_id, user_id=ctx.user_id, role=ctx.membership.role
+    )
 
 
 @router.get("/{tenant_id}/members", response_model=list[MembershipResponse])
