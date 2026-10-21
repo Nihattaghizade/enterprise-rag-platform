@@ -33,9 +33,9 @@ export default function DocumentsPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
-  const fetchDocuments = useCallback(async () => {
+  const fetchDocuments = useCallback(async (isPolling = false) => {
     if (!isAuthenticated) return;
-    setIsLoading(true);
+    if (!isPolling) setIsLoading(true);
     setError(null);
     try {
       const response = await list_documents(statusFilter || null);
@@ -48,7 +48,7 @@ export default function DocumentsPage() {
         setError("Unable to load knowledge base documents.");
       }
     } finally {
-      setIsLoading(false);
+      if (!isPolling) setIsLoading(false);
     }
   }, [isAuthenticated, statusFilter]);
 
@@ -57,6 +57,18 @@ export default function DocumentsPage() {
       fetchDocuments();
     }
   }, [isAuthenticated, fetchDocuments]);
+
+  // Real-time automatic polling whenever any document is processing
+  useEffect(() => {
+    const hasProcessing = documents.some((d) => d.status === "processing");
+    if (!hasProcessing) return;
+
+    const interval = setInterval(() => {
+      fetchDocuments(true);
+    }, 2000);
+
+    return () => clearInterval(interval);
+  }, [documents, fetchDocuments]);
 
   if (authLoading || !isAuthenticated) {
     return (
@@ -85,6 +97,15 @@ export default function DocumentsPage() {
               : "Browse indexed workspace documents and download original source files."}
           </p>
         </div>
+
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fetchDocuments(false)}
+        >
+          <RefreshCw className="h-3.5 w-3.5" />
+          Refresh
+        </Button>
       </div>
 
       {canWriteDocuments && (
@@ -101,7 +122,7 @@ export default function DocumentsPage() {
             <AlertCircle className="h-4 w-4 shrink-0" />
             <span>{error}</span>
           </div>
-          <Button variant="outline" size="sm" onClick={fetchDocuments}>
+          <Button variant="outline" size="sm" onClick={() => fetchDocuments(false)}>
             <RefreshCw className="h-3.5 w-3.5" />
             Try Again
           </Button>

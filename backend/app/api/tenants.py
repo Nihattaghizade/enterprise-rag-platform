@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import AuthContext, get_auth_context, require_roles
+from app.core.errors import NotFoundError
 from app.core.permissions import assert_tenant_access
+from app.db.repositories.tenants import TenantRepository
 from app.db.session import get_db_session
 from app.schemas.tenants import (
     MemberAddRequest,
@@ -32,13 +34,29 @@ async def list_tenants_endpoint(
     return [TenantResponse.model_validate(t) for t in tenants if t.id == ctx.tenant_id]
 
 
+@router.get("/{tenant_id}", response_model=TenantResponse)
+async def get_tenant_endpoint(
+    tenant_id: uuid.UUID,
+    ctx: AuthContext = Depends(require_roles("admin", "editor", "viewer", "trial_viewer")),
+    session: AsyncSession = Depends(get_db_session),
+) -> TenantResponse:
+    """Get single workspace details by ID."""
+    assert_tenant_access(ctx.membership, tenant_id)
+    tenant_repo = TenantRepository(session)
+    tenant = await tenant_repo.get_by_id(tenant_id)
+    if tenant is None:
+        raise NotFoundError("Workspace not found.")
+    return TenantResponse.model_validate(tenant)
+
+
+
 @router.post("", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant_endpoint(
     payload: TenantCreateRequest,
-    ctx: AuthContext = Depends(require_roles("admin")),
+    ctx: AuthContext = Depends(require_roles("superadmin")),
     session: AsyncSession = Depends(get_db_session),
 ) -> TenantResponse:
-    """Create a new tenant workspace (requires admin role)."""
+    """Create a new tenant workspace (requires superadmin role)."""
     tenant = await tenant_service.create_tenant(
         session,
         name=payload.name,

@@ -43,6 +43,13 @@ export default function SignUpPage() {
   } | null>(null);
 
   useEffect(() => {
+    // Reset inputs on mount/page navigation
+    setEmail("");
+    setPassword("");
+    setConfirmPassword("");
+    setNewWorkspaceName("");
+    setErrorMessage(null);
+
     async function fetchWorkspaces() {
       try {
         setLoadingWorkspaces(true);
@@ -181,7 +188,7 @@ export default function SignUpPage() {
               </Button>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
               {errorMessage && (
                 <div className="flex items-start gap-2.5 rounded-lg border border-danger/30 bg-danger/10 p-3 text-xs text-danger">
                   <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -196,11 +203,12 @@ export default function SignUpPage() {
                 </label>
                 <Input
                   type="email"
+                  name="signup_account_email"
                   placeholder="name@company.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  autoComplete="email"
+                  autoComplete="off"
                   disabled={loading}
                 />
               </div>

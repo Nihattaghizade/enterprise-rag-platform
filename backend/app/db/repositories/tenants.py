@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -44,6 +44,11 @@ class TenantRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_by_name(self, name: str) -> Optional[Tenant]:
+        stmt = select(Tenant).where(func.lower(Tenant.name) == name.strip().lower())
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def list_tenants(self, include_pending: bool = False) -> Sequence[Tenant]:
         stmt = select(Tenant)
         if not include_pending:
@@ -53,7 +58,7 @@ class TenantRepository:
         return result.scalars().all()
 
     async def list_public_workspaces(self) -> Sequence[Tenant]:
-        """Return non-sandbox active workspaces available for user signup."""
+        """Return non-sandbox, non-platform active workspaces available for user signup."""
         stmt = (
             select(Tenant)
             .where(Tenant.is_active.is_(True))
@@ -62,8 +67,13 @@ class TenantRepository:
         )
         result = await self.session.execute(stmt)
         tenants = result.scalars().all()
-        # Filter out trial sandboxes
-        return [t for t in tenants if not (t.settings and t.settings.get("is_sandbox"))]
+        # Filter out trial sandboxes and the reserved Platform Administration workspace
+        return [
+            t for t in tenants
+            if not (t.settings and (t.settings.get("is_sandbox") or t.settings.get("is_platform")))
+            and t.slug != "platform"
+            and t.name != "Platform Administration"
+        ]
 
     async def update_tenant_status(self, tenant_id: uuid.UUID, new_status: str) -> Optional[Tenant]:
         tenant = await self.get_by_id(tenant_id)

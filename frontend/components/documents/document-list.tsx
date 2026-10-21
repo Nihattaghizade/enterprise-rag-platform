@@ -277,10 +277,10 @@ export function DocumentList({
           </p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-surface shadow-panel">
+        <div className="overflow-x-auto max-h-[520px] overflow-y-auto rounded-xl border border-border bg-surface shadow-panel">
           <table className="w-full border-collapse text-left text-sm">
-            <thead>
-              <tr className="border-b border-border bg-surface-muted/60 text-xs font-medium text-muted-foreground">
+            <thead className="sticky top-0 z-10 bg-surface-muted border-b border-border">
+              <tr className="text-xs font-medium text-muted-foreground">
                 {canManage && (
                   <th className="w-10 px-4 py-3">
                     <input

@@ -270,8 +270,8 @@ function AuthenticatedBentoDashboard() {
                 )}
               </div>
             ) : (
-              <div className="divide-y divide-border-subtle">
-                {documents.slice(0, 6).map((doc) => (
+              <div className="divide-y divide-border-subtle max-h-[350px] overflow-y-auto pr-1">
+                {documents.slice(0, 15).map((doc) => (
                   <div
                     key={doc.id}
                     className="flex items-center justify-between py-3.5 text-sm"

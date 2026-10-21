@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  UserPlus,
   Users,
   XCircle,
 } from "lucide-react";
@@ -29,15 +30,21 @@ import {
   approveTenantSuperadmin,
   createTenantSuperadmin,
   getAllPendingMembersSuperadmin,
+  getAllPlatformUsersSuperadmin,
   getAllTenantsSuperadmin,
   getSuperadminOverview,
   rejectTenantSuperadmin,
   superadminApproveMember,
+  superadminCreateUser,
+  superadminDeleteTenant,
+  superadminDeleteUser,
   superadminRejectMember,
 } from "@/lib/api";
 import { formatDateTime } from "@/lib/utils";
 import type {
   PendingApprovalResponse,
+  PlatformUserResponse,
+  RoleType,
   SuperadminOverviewResponse,
   TenantResponse,
 } from "@/types/api";
@@ -52,6 +59,7 @@ export default function SuperadminConsolePage() {
   const [overview, setOverview] = useState<SuperadminOverviewResponse | null>(null);
   const [tenants, setTenants] = useState<TenantResponse[]>([]);
   const [pendingMembers, setPendingMembers] = useState<PendingApprovalResponse[]>([]);
+  const [platformUsers, setPlatformUsers] = useState<PlatformUserResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -61,9 +69,17 @@ export default function SuperadminConsolePage() {
   const [newTenantSlug, setNewTenantSlug] = useState("");
   const [creatingTenant, setCreatingTenant] = useState(false);
 
+  // New User Modal State
+  const [showCreateUserModal, setShowCreateUserModal] = useState(false);
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState<RoleType>("viewer");
+  const [newUserTenantId, setNewUserTenantId] = useState("");
+  const [creatingUser, setCreatingUser] = useState(false);
+
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"overview" | "tenants" | "approvals">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "tenants" | "approvals" | "users">("overview");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -78,14 +94,16 @@ export default function SuperadminConsolePage() {
     setLoading(true);
     setError(null);
     try {
-      const [overviewData, tenantList, pendingList] = await Promise.all([
+      const [overviewData, tenantList, pendingList, userList] = await Promise.all([
         getSuperadminOverview(),
         getAllTenantsSuperadmin(),
         getAllPendingMembersSuperadmin(),
+        getAllPlatformUsersSuperadmin(),
       ]);
       setOverview(overviewData);
       setTenants(tenantList);
       setPendingMembers(pendingList);
+      setPlatformUsers(userList);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setError(err.message);
@@ -194,6 +212,108 @@ export default function SuperadminConsolePage() {
     }
   };
 
+  // Role change logic with smart tenant selection
+  const handleRoleChange = (role: RoleType) => {
+    setNewUserRole(role);
+    const platformTenant = tenants.find(
+      (t) => t.slug === "platform" || t.name === "Platform Administration" || t.settings?.is_platform
+    );
+    const sandboxTenant = tenants.find(
+      (t) => t.settings?.is_sandbox || t.name.toLowerCase().includes("sandbox")
+    );
+    if (role === "superadmin" && platformTenant) {
+      setNewUserTenantId(platformTenant.id);
+    } else if (role === "trial_viewer" && sandboxTenant) {
+      setNewUserTenantId(sandboxTenant.id);
+    } else if (!newUserTenantId || newUserTenantId === platformTenant?.id || newUserTenantId === sandboxTenant?.id) {
+      const activeTenant = tenants.find((t) => t.status === "active");
+      if (activeTenant) setNewUserTenantId(activeTenant.id);
+    }
+  };
+
+  // Create User
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserEmail.trim() || !newUserPassword.trim()) return;
+    try {
+      setCreatingUser(true);
+      await superadminCreateUser({
+        email: newUserEmail.trim(),
+        password: newUserPassword,
+        role: newUserRole,
+        tenant_id: newUserTenantId || undefined,
+      });
+      pushToast({
+        tone: "success",
+        title: "User Provisioned",
+        description: `Account "${newUserEmail}" with role "${newUserRole}" is now active.`,
+      });
+      setShowCreateUserModal(false);
+      setNewUserEmail("");
+      setNewUserPassword("");
+      setNewUserRole("viewer");
+      setNewUserTenantId("");
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to create user";
+      pushToast({ tone: "error", title: "Error", description: msg });
+    } finally {
+      setCreatingUser(false);
+    }
+  };
+
+  // Delete User
+  const handleDeleteUser = async (userId: string, email: string) => {
+    if (!confirm(`Are you sure you want to permanently delete user "${email}"? This will delete all of their memberships across the platform.`)) return;
+    try {
+      await superadminDeleteUser(userId);
+      pushToast({
+        tone: "success",
+        title: "User Deleted",
+        description: `User account "${email}" has been removed.`,
+      });
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to delete user";
+      pushToast({ tone: "error", title: "Error", description: msg });
+    }
+  };
+
+  // Delete Workspace
+  const handleDeleteTenant = async (tenant: TenantResponse) => {
+    if (
+      tenant.slug === "platform" ||
+      tenant.name === "Platform Administration" ||
+      tenant.settings?.is_platform ||
+      tenant.id === "00000000-0000-0000-0000-000000000001"
+    ) {
+      pushToast({
+        tone: "error",
+        title: "Action Prohibited",
+        description: "This tenant is for superadmins and cannot be deleted.",
+      });
+      return;
+    }
+    if (
+      !confirm(
+        `Are you sure you want to delete workspace "${tenant.name}"? ALL documents and user accounts attached to this workspace will be permanently deleted.`
+      )
+    )
+      return;
+    try {
+      await superadminDeleteTenant(tenant.id);
+      pushToast({
+        tone: "success",
+        title: "Workspace Deleted",
+        description: `Workspace "${tenant.name}" and associated member accounts have been deleted.`,
+      });
+      await loadData();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to delete workspace";
+      pushToast({ tone: "error", title: "Error", description: msg });
+    }
+  };
+
   if (authLoading || loading) {
     return (
       <div className="min-h-screen bg-slate-950 p-8 text-slate-100 flex items-center justify-center">
@@ -210,9 +330,19 @@ export default function SuperadminConsolePage() {
     t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     t.slug.toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const filteredUsers = platformUsers.filter((u) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      u.email.toLowerCase().includes(q) ||
+      (u.tenant_name && u.tenant_name.toLowerCase().includes(q)) ||
+      u.role.toLowerCase().includes(q) ||
+      (u.membership_status && u.membership_status.toLowerCase().includes(q))
+    );
+  });
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-zinc-950 text-slate-100 p-6 sm:p-10 font-sans">
+    <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-zinc-950 text-slate-100 p-6 sm:p-10 font-sans max-h-screen overflow-y-auto">
       <div className="mx-auto max-w-7xl space-y-8">
         {/* Top Header Banner */}
         <div className="relative overflow-hidden rounded-2xl border border-indigo-500/20 bg-gradient-to-r from-indigo-950/60 via-slate-900 to-purple-950/40 p-6 shadow-2xl backdrop-blur-xl">
@@ -246,7 +376,23 @@ export default function SuperadminConsolePage() {
                 Refresh
               </button>
               <button
-                onClick={() => setShowCreateModal(true)}
+                onClick={() => {
+                  setNewUserEmail("");
+                  setNewUserPassword("");
+                  handleRoleChange("viewer");
+                  setShowCreateUserModal(true);
+                }}
+                className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-500/25 transition hover:from-emerald-600 hover:to-teal-700"
+              >
+                <UserPlus className="h-4 w-4" />
+                New User
+              </button>
+              <button
+                onClick={() => {
+                  setNewTenantName("");
+                  setNewTenantSlug("");
+                  setShowCreateModal(true);
+                }}
                 className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-500 to-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-500/25 transition hover:from-indigo-600 hover:to-indigo-700"
               >
                 <Plus className="h-4 w-4" />
@@ -291,6 +437,16 @@ export default function SuperadminConsolePage() {
               }`}
             >
               Workspace Directory ({tenants.length})
+            </button>
+            <button
+              onClick={() => setActiveTab("users")}
+              className={`rounded-lg px-3.5 py-1.5 transition ${
+                activeTab === "users"
+                  ? "bg-indigo-600 text-white font-semibold"
+                  : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+              }`}
+            >
+              All Users ({platformUsers.length})
             </button>
           </div>
         </div>
@@ -423,10 +579,10 @@ export default function SuperadminConsolePage() {
                 </button>
               </div>
 
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
                 <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400">
+                  <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10 border-b border-slate-800 text-slate-400">
+                    <tr>
                       <th className="py-2.5 px-3">Workspace Name</th>
                       <th className="py-2.5 px-3">Slug</th>
                       <th className="py-2.5 px-3">Type</th>
@@ -435,7 +591,7 @@ export default function SuperadminConsolePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {tenants.slice(0, 5).map((t) => (
+                    {tenants.map((t) => (
                       <tr key={t.id} className="hover:bg-slate-800/30 transition">
                         <td className="py-3 px-3 font-semibold text-white">{t.name}</td>
                         <td className="py-3 px-3 font-mono text-slate-400">{t.slug}</td>
@@ -488,10 +644,10 @@ export default function SuperadminConsolePage() {
                   No workspace creation requests are currently awaiting approval.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
                   <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-400">
+                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10 border-b border-slate-800 text-slate-400">
+                      <tr>
                         <th className="py-2.5 px-3">Workspace Name</th>
                         <th className="py-2.5 px-3">Slug</th>
                         <th className="py-2.5 px-3">Submitted</th>
@@ -540,10 +696,10 @@ export default function SuperadminConsolePage() {
                   No individual membership requests are pending approval across any workspace.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[300px] overflow-y-auto">
                   <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-800 text-slate-400">
+                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10 border-b border-slate-800 text-slate-400">
+                      <tr>
                         <th className="py-2.5 px-3">Applicant Email</th>
                         <th className="py-2.5 px-3">Target Workspace</th>
                         <th className="py-2.5 px-3">Requested Role</th>
@@ -603,10 +759,10 @@ export default function SuperadminConsolePage() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto max-h-[460px] overflow-y-auto">
               <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-800 text-slate-400">
+                <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10 border-b border-slate-800 text-slate-400">
+                  <tr>
                     <th className="py-3 px-3">Workspace</th>
                     <th className="py-3 px-3">Identifier / Slug</th>
                     <th className="py-3 px-3">Classification</th>
@@ -643,22 +799,145 @@ export default function SuperadminConsolePage() {
                         </span>
                       </td>
                       <td className="py-3 px-3 text-slate-400">{formatDateTime(t.created_at)}</td>
-                      <td className="py-3 px-3 text-right">
-                        {t.status === "pending" ? (
+                      <td className="py-3 px-3 text-right space-x-2">
+                        {t.status === "pending" && (
                           <button
                             onClick={() => handleApproveTenant(t.id)}
-                            className="rounded-lg bg-emerald-600 px-3 py-1 font-semibold text-white hover:bg-emerald-500"
+                            className="rounded-lg bg-emerald-600 px-3 py-1 font-semibold text-white hover:bg-emerald-500 shadow text-xs"
                           >
                             Approve
                           </button>
+                        )}
+                        {t.slug === "platform" || t.name === "Platform Administration" || t.settings?.is_platform ? (
+                          <button
+                            onClick={() => handleDeleteTenant(t)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-slate-700 bg-slate-800/60 px-2.5 py-1 text-[11px] font-semibold text-amber-300 hover:bg-slate-800 transition"
+                            title="Protected System Workspace"
+                          >
+                            <Shield className="h-3 w-3" />
+                            Protected
+                          </button>
                         ) : (
-                          <span className="text-slate-500 text-[11px]">Active</span>
+                          <button
+                            onClick={() => handleDeleteTenant(t)}
+                            className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-950/20 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-900/40 hover:text-white transition"
+                            title="Delete Workspace and all attached accounts"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            Delete
+                          </button>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: ALL REGISTERED PLATFORM USERS */}
+        {activeTab === "users" && (
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-6 shadow-xl backdrop-blur">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+                <div>
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Users className="h-5 w-5 text-indigo-400" />
+                    All Platform Users ({platformUsers.length})
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Universal directory of all registered user accounts and their workspace memberships.
+                  </p>
+                </div>
+                <div className="w-full sm:w-72">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by email, workspace, or role..."
+                    className="w-full rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {filteredUsers.length === 0 ? (
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-8 text-center text-xs text-slate-400">
+                  No users found matching your search query.
+                </div>
+              ) : (
+                <div className="overflow-x-auto max-h-[460px] overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-slate-900/95 backdrop-blur z-10 border-b border-slate-800 text-slate-400">
+                      <tr>
+                        <th className="py-2.5 px-3">User Email</th>
+                        <th className="py-2.5 px-3">Assigned Workspace</th>
+                        <th className="py-2.5 px-3">Access Role</th>
+                        <th className="py-2.5 px-3">Account Status</th>
+                        <th className="py-2.5 px-3">Registered Date</th>
+                        <th className="py-2.5 px-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-800/60">
+                      {filteredUsers.map((u, i) => (
+                        <tr key={u.membership_id ?? `${u.user_id}-${i}`} className="hover:bg-slate-800/30">
+                          <td className="py-3 px-3">
+                            <span className="font-semibold text-white">{u.email}</span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span className="text-slate-300 font-medium">{u.tenant_name || "Unassigned"}</span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={`rounded px-2 py-0.5 font-bold uppercase tracking-wider text-[10px] ${
+                                u.role === "superadmin"
+                                  ? "bg-amber-400/20 text-amber-300 border border-amber-400/30"
+                                  : u.role === "admin"
+                                  ? "bg-purple-900/40 text-purple-300 border border-purple-700/50"
+                                  : u.role === "editor"
+                                  ? "bg-sky-900/40 text-sky-300 border border-sky-700/50"
+                                  : u.role === "trial_viewer"
+                                  ? "bg-emerald-900/40 text-emerald-300 border border-emerald-700/50"
+                                  : "bg-slate-800 text-slate-300 border border-slate-700"
+                              }`}
+                            >
+                              {u.role.replace("_", " ")}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <span
+                              className={`rounded px-2 py-0.5 font-medium ${
+                                u.membership_status === "active"
+                                  ? "bg-emerald-950 text-emerald-300 border border-emerald-800/50"
+                                  : u.membership_status === "pending_approval"
+                                  ? "bg-amber-950 text-amber-300 border border-amber-800/50"
+                                  : "bg-slate-800 text-slate-400 border border-slate-700"
+                              }`}
+                            >
+                              {u.membership_status || "active"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-slate-400">{formatDateTime(u.created_at)}</td>
+                          <td className="py-3 px-3 text-right">
+                            {u.role === "superadmin" && u.email === "superadmin@enterprise.internal" ? (
+                              <span className="text-[11px] text-slate-500 font-mono">Protected</span>
+                            ) : (
+                              <button
+                                onClick={() => handleDeleteUser(u.user_id, u.email)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-rose-500/30 bg-rose-950/20 px-2.5 py-1 text-[11px] font-semibold text-rose-300 hover:bg-rose-900/40 hover:text-white transition"
+                                title="Permanently delete user"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Delete
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -714,7 +993,11 @@ export default function SuperadminConsolePage() {
                 <div className="mt-6 flex justify-end gap-3 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowCreateModal(false)}
+                    onClick={() => {
+                      setNewTenantName("");
+                      setNewTenantSlug("");
+                      setShowCreateModal(false);
+                    }}
                     className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
                   >
                     Cancel
@@ -725,6 +1008,151 @@ export default function SuperadminConsolePage() {
                     className="rounded-xl bg-indigo-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 disabled:opacity-50"
                   >
                     {creatingTenant ? "Creating..." : "Create & Activate"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Create User */}
+        {showCreateUserModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <UserPlus className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Provision New User Account</h3>
+                  <p className="text-xs text-slate-400">
+                    Direct superadmin creation with instant platform activation.
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleCreateUser} autoComplete="off" className="mt-5 space-y-4">
+                <div>
+                  <label className="block text-xs font-medium text-slate-300">
+                    User Work Email
+                  </label>
+                  <input
+                    type="email"
+                    name="superadmin_new_user_email"
+                    autoComplete="off"
+                    required
+                    value={newUserEmail}
+                    onChange={(e) => setNewUserEmail(e.target.value)}
+                    placeholder="colleague@organization.com"
+                    className="mt-1 block w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300">
+                    Initial Password
+                  </label>
+                  <input
+                    type="password"
+                    name="superadmin_new_user_password"
+                    autoComplete="new-password"
+                    required
+                    minLength={8}
+                    value={newUserPassword}
+                    onChange={(e) => setNewUserPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    className="mt-1 block w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-indigo-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300">
+                    Access Role
+                  </label>
+                  <select
+                    value={newUserRole}
+                    onChange={(e) => handleRoleChange(e.target.value as RoleType)}
+                    className="mt-1 block w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none capitalize"
+                  >
+                    <option value="trial_viewer">Trial Viewer (Sandbox Evaluation)</option>
+                    <option value="viewer">Viewer (Read & Search Only)</option>
+                    <option value="editor">Editor (Upload & Search)</option>
+                    <option value="admin">Workspace Admin (Manage Workspace)</option>
+                    <option value="superadmin">Platform Superadmin (Universal Access)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-slate-300">
+                    Assigned Workspace
+                  </label>
+                  {newUserRole === "trial_viewer" ? (
+                    <div className="mt-1 space-y-1">
+                      <input
+                        type="text"
+                        disabled
+                        value="Trial Sandbox (Test)"
+                        className="block w-full rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2 text-xs text-slate-400 cursor-not-allowed font-medium"
+                      />
+                      <p className="text-[11px] text-sky-400">
+                        Trial Viewers are automatically locked to the isolated Trial Sandbox workspace.
+                      </p>
+                    </div>
+                  ) : newUserRole === "superadmin" ? (
+                    <div className="mt-1 space-y-1">
+                      <input
+                        type="text"
+                        disabled
+                        value="Platform Administration"
+                        className="block w-full rounded-xl border border-amber-500/30 bg-slate-950 px-3 py-2 text-xs text-amber-300 cursor-not-allowed font-semibold"
+                      />
+                      <p className="text-[11px] text-amber-400/90">
+                        Platform Superadmins are automatically bound to the Platform Administration root workspace.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="mt-1 space-y-1">
+                      <select
+                        required
+                        value={newUserTenantId}
+                        onChange={(e) => setNewUserTenantId(e.target.value)}
+                        className="block w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-xs text-white focus:border-indigo-500 focus:outline-none"
+                      >
+                        <option value="" disabled>-- Select Workspace --</option>
+                        {tenants
+                          .filter((t) => t.status === "active")
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} ({t.slug})
+                            </option>
+                          ))}
+                      </select>
+                      <p className="text-[11px] text-slate-400">
+                        Superadmins can assign members with any role to any active workspace (including Platform Administration).
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-6 flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUserEmail("");
+                      setNewUserPassword("");
+                      setNewUserTenantId("");
+                      setShowCreateUserModal(false);
+                    }}
+                    className="rounded-xl border border-slate-700 px-4 py-2 text-xs font-medium text-slate-300 hover:bg-slate-800"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingUser}
+                    className="rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2 text-xs font-semibold text-white shadow-lg shadow-emerald-600/30 hover:from-emerald-600 hover:to-teal-700 disabled:opacity-50"
+                  >
+                    {creatingUser ? "Creating User..." : "Create & Activate User"}
                   </button>
                 </div>
               </form>

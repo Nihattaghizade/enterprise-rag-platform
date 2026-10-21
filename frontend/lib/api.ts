@@ -9,10 +9,12 @@ import {
   type MemberRoleUpdateRequest,
   type MembershipResponse,
   type PendingApprovalResponse,
+  type PlatformUserResponse,
   type RefreshRequest,
   type RoleType,
   type SignUpRequest,
   type SignUpResponse,
+  type SuperadminCreateUserRequest,
   type SuperadminOverviewResponse,
   type TenantCreateRequest,
   type TenantResponse,
@@ -409,6 +411,13 @@ export async function list_tenants(): Promise<TenantResponse[]> {
   return apiFetch<TenantResponse[]>("/api/v1/tenants", { method: "GET" });
 }
 
+// Backend: GET /api/v1/tenants/{tenant_id} (backend/app/api/tenants.py)
+export async function get_tenant(tenantId: string): Promise<TenantResponse> {
+  return apiFetch<TenantResponse>(`/api/v1/tenants/${encodeURIComponent(tenantId)}`, {
+    method: "GET",
+  });
+}
+
 // Backend: POST /api/v1/tenants (backend/app/api/tenants.py:30)
 export async function create_tenant(
   payload: TenantCreateRequest
@@ -660,3 +669,43 @@ export async function superadminRejectMember(
     { method: "POST" }
   );
 }
+
+export async function getAllPlatformUsersSuperadmin(): Promise<PlatformUserResponse[]> {
+  return apiFetch<PlatformUserResponse[]>("/api/v1/superadmin/users", {
+    method: "GET",
+  });
+}
+
+export async function superadminCreateUser(
+  payload: SuperadminCreateUserRequest
+): Promise<PlatformUserResponse> {
+  return apiFetch<PlatformUserResponse>("/api/v1/superadmin/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function superadminDeleteUser(
+  userId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/api/v1/superadmin/users/${encodeURIComponent(userId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+export async function superadminDeleteTenant(
+  tenantId: string
+): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>(
+    `/api/v1/superadmin/tenants/${encodeURIComponent(tenantId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+}
+
+

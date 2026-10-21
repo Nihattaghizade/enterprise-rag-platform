@@ -77,6 +77,28 @@ async def signup(
     tenant_repo = TenantRepository(session)
 
     normalized_email = payload.email.strip().lower()
+
+    # Pre-validation for new workspace creation: ensure unique name before creating user or tenant
+    if payload.role == "admin" and payload.new_tenant_name and payload.new_tenant_name.strip():
+        raw_name = payload.new_tenant_name.strip()
+        if raw_name.lower() in ("platform administration", "platform"):
+            raise ValidationError("The workspace name 'Platform Administration' is reserved for system administration.", code="reserved_name")
+        existing_by_name = await tenant_repo.get_by_name(raw_name)
+        if existing_by_name is not None:
+            raise ValidationError(
+                f"A workspace with the name '{raw_name}' already exists in the system. Please specify a different workspace name or join the existing workspace.",
+                code="duplicate_workspace_name",
+            )
+        base_slug = _slugify(raw_name)
+        if base_slug == "platform":
+            raise ValidationError("The workspace slug 'platform' is reserved for system administration.", code="reserved_name")
+        existing_by_slug = await tenant_repo.get_by_slug(base_slug)
+        if existing_by_slug is not None:
+            raise ValidationError(
+                f"A workspace with the identifier '{base_slug}' already exists in the system. Please specify a different workspace name.",
+                code="duplicate_workspace_slug",
+            )
+
     user = await user_repo.get_by_email(normalized_email)
     if user is None:
         user = await user_repo.create(
@@ -129,6 +151,8 @@ async def signup(
         target_tenant = await tenant_repo.get_by_id(payload.tenant_id)
         if target_tenant is None or not target_tenant.is_active or target_tenant.status != "active":
             raise NotFoundError("The selected workspace does not exist or is inactive.")
+        if target_tenant.slug == "platform" or target_tenant.name == "Platform Administration" or (target_tenant.settings and target_tenant.settings.get("is_platform")):
+            raise ForbiddenError("The Platform Administration workspace is restricted and cannot be selected during self-registration.")
 
         existing_membership = await tenant_repo.get_membership(
             tenant_id=target_tenant.id,
@@ -175,11 +199,7 @@ async def signup(
     if payload.role == "admin":
         if payload.new_tenant_name and payload.new_tenant_name.strip():
             raw_name = payload.new_tenant_name.strip()
-            base_slug = _slugify(raw_name)
-            slug = base_slug
-            existing_slug = await tenant_repo.get_by_slug(slug)
-            if existing_slug is not None:
-                slug = f"{base_slug}-{uuid.uuid4().hex[:6]}"
+            slug = _slugify(raw_name)
 
             new_tenant = await tenant_repo.create_tenant(
                 name=raw_name,
@@ -215,6 +235,8 @@ async def signup(
             target_tenant = await tenant_repo.get_by_id(payload.tenant_id)
             if target_tenant is None or not target_tenant.is_active:
                 raise NotFoundError("The selected workspace does not exist.")
+            if target_tenant.slug == "platform" or target_tenant.name == "Platform Administration" or (target_tenant.settings and target_tenant.settings.get("is_platform")):
+                raise ForbiddenError("The Platform Administration workspace is restricted and cannot be selected during self-registration.")
 
             existing_membership = await tenant_repo.get_membership(
                 tenant_id=target_tenant.id,

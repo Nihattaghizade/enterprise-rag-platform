@@ -10,7 +10,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Plus,
   RefreshCw,
   Shield,
   Trash2,
@@ -21,12 +20,11 @@ import { use_auth } from "@/lib/auth";
 import {
   add_tenant_member,
   approveTenantMember,
-  create_tenant,
   deleteTenantMember,
   get_prometheus_metrics,
+  get_tenant,
   getPendingTenantMembers,
   list_tenant_members,
-  list_tenants,
   rejectTenantMember,
   update_tenant_member_role,
 } from "@/lib/api";
@@ -65,9 +63,6 @@ export default function AdminTenantsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [tenantName, setTenantName] = useState("");
-  const [tenantSlug, setTenantSlug] = useState("");
-  const [creatingTenant, setCreatingTenant] = useState(false);
 
   const [memberEmail, setMemberEmail] = useState("");
   const [memberRole, setMemberRole] = useState<"admin" | "editor" | "viewer">("viewer");
@@ -82,18 +77,24 @@ export default function AdminTenantsPage() {
     }
   }, [authLoading, isAuthenticated, router]);
 
+  useEffect(() => {
+    // Reset add member inputs on mount/route transition
+    setMemberEmail("");
+    setMemberPassword("");
+  }, []);
+
   const loadAdminData = useCallback(async () => {
     if (!isAuthenticated || !isAdmin || !session?.tenant_id) return;
     setIsLoading(true);
     setError(null);
     try {
-      const [tenantList, memberList, pendingList, rawMetrics] = await Promise.all([
-        list_tenants(),
+      const [currentTenant, memberList, pendingList, rawMetrics] = await Promise.all([
+        get_tenant(session.tenant_id),
         list_tenant_members(session.tenant_id),
         getPendingTenantMembers(session.tenant_id),
         get_prometheus_metrics(),
       ]);
-      setTenants(tenantList);
+      setTenants([currentTenant]);
       setMembers(memberList);
       setPendingMembers(pendingList);
       setMetricsText(rawMetrics);
@@ -163,55 +164,6 @@ export default function AdminTenantsPage() {
     }
   }, [isAuthenticated, isAdmin, loadAdminData]);
 
-  const handleCreateTenant = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmedName = tenantName.trim();
-    const trimmedSlug = tenantSlug.trim();
-
-    if (trimmedName.length < 2 || trimmedName.length > 120) {
-      pushToast({
-        tone: "error",
-        title: "Invalid Workspace Name",
-        description: "Workspace name must be between 2 and 120 characters.",
-      });
-      return;
-    }
-    if (trimmedSlug.length < 2 || trimmedSlug.length > 64) {
-      pushToast({
-        tone: "error",
-        title: "Invalid Workspace Identifier",
-        description: "Workspace URL slug must be between 2 and 64 characters.",
-      });
-      return;
-    }
-
-    setCreatingTenant(true);
-    try {
-      const created = await create_tenant({
-        name: trimmedName,
-        slug: trimmedSlug,
-        settings: {},
-      });
-      pushToast({
-        tone: "success",
-        title: "Workspace Provisioned",
-        description: `"${created.name}" (${created.slug}) has been created.`,
-      });
-      setTenantName("");
-      setTenantSlug("");
-      await loadAdminData();
-    } catch (err) {
-      if (err instanceof ApiRequestError) {
-        pushToast({
-          tone: "error",
-          title: "Unable to Create Workspace",
-          description: err.message,
-        });
-      }
-    } finally {
-      setCreatingTenant(false);
-    }
-  };
 
   const handleAddMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -323,7 +275,7 @@ export default function AdminTenantsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6 p-6 sm:p-8">
+    <div className="mx-auto max-w-7xl space-y-6 p-6 sm:p-8 max-h-[calc(100vh-2rem)] overflow-y-auto">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-display text-2xl sm:text-3xl font-bold text-foreground">
@@ -358,79 +310,43 @@ export default function AdminTenantsPage() {
       ) : (
         <>
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            {/* CURRENT WORKSPACE & PROVISION NEW WORKSPACE */}
+            {/* CURRENT WORKSPACE DETAILS */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Building2 className="h-5 w-5 text-primary" />
-                  Organization Workspaces
+                  Workspace Details
                 </CardTitle>
                 <CardDescription>
-                  View your active workspace details or provision a new isolated
-                  workspace.
+                  View your active workspace configuration and identifiers.
                 </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {tenants.map((t) => (
-                  <div
-                    key={t.id}
-                    className="rounded-xl border border-border-subtle bg-surface-elevated p-4 space-y-2 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-display text-base font-semibold text-foreground">
-                        {t.name}
-                      </span>
-                      <Badge variant={t.is_active ? "success" : "danger"}>
-                        {t.is_active ? "Active" : "Inactive"}
-                      </Badge>
+              <CardContent>
+                <div className="max-h-[360px] overflow-y-auto space-y-3 pr-1.5">
+                  {tenants.map((t) => (
+                    <div
+                      key={t.id}
+                      className="rounded-xl border border-border-subtle bg-surface-elevated p-4 space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-display text-base font-semibold text-foreground">
+                          {t.name}
+                        </span>
+                        <Badge variant={t.is_active ? "success" : "danger"}>
+                          {t.is_active ? "Active" : "Inactive"}
+                        </Badge>
+                      </div>
+                      <p className="text-muted-foreground">
+                        Slug:{" "}
+                        <span className="font-mono text-foreground">{t.slug}</span>{" "}
+                        · Created {formatDateTime(t.created_at)}
+                      </p>
+                      <p className="font-mono text-[11px] text-muted-foreground">
+                        Workspace ID: {t.id}
+                      </p>
                     </div>
-                    <p className="text-muted-foreground">
-                      Slug:{" "}
-                      <span className="font-mono text-foreground">{t.slug}</span>{" "}
-                      · Created {formatDateTime(t.created_at)}
-                    </p>
-                    <p className="font-mono text-[11px] text-muted-foreground">
-                      Workspace ID: {t.id}
-                    </p>
-                  </div>
-                ))}
-
-                <form
-                  onSubmit={handleCreateTenant}
-                  className="space-y-3 border-t border-border-subtle pt-4"
-                >
-                  <p className="text-xs font-semibold text-foreground">
-                    Create Additional Workspace
-                  </p>
-                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-                    <Input
-                      value={tenantName}
-                      onChange={(e) => setTenantName(e.target.value)}
-                      placeholder="Workspace Name (e.g. Legal Division)"
-                      required
-                      minLength={2}
-                      maxLength={120}
-                    />
-                    <Input
-                      value={tenantSlug}
-                      onChange={(e) => setTenantSlug(e.target.value)}
-                      placeholder="workspace-slug (e.g. legal-division)"
-                      required
-                      minLength={2}
-                      maxLength={64}
-                      className="font-mono text-xs"
-                    />
-                  </div>
-                  <Button
-                    type="submit"
-                    variant="secondary"
-                    size="sm"
-                    isLoading={creatingTenant}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Create Workspace
-                  </Button>
-                </form>
+                  ))}
+                </div>
               </CardContent>
             </Card>
 
@@ -447,13 +363,15 @@ export default function AdminTenantsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleAddMember} className="space-y-3.5">
+                <form onSubmit={handleAddMember} autoComplete="off" className="space-y-3.5">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-foreground">
                       Work Email
                     </label>
                     <Input
                       type="email"
+                      name="new_member_workspace_email"
+                      autoComplete="off"
                       required
                       minLength={3}
                       value={memberEmail}
@@ -492,6 +410,8 @@ export default function AdminTenantsPage() {
                       </label>
                       <Input
                         type="password"
+                        name="new_member_workspace_password"
+                        autoComplete="new-password"
                         minLength={8}
                         value={memberPassword}
                         onChange={(e) => setMemberPassword(e.target.value)}
@@ -538,7 +458,7 @@ export default function AdminTenantsPage() {
                   No pending membership applications for this workspace.
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto max-h-[300px] overflow-y-auto pr-1">
                   <table className="w-full border-collapse text-left text-sm">
                     <thead>
                       <tr className="border-b border-border bg-surface-muted/60 text-xs font-medium text-muted-foreground">
@@ -603,7 +523,7 @@ export default function AdminTenantsPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[360px] overflow-y-auto pr-1">
                 <table className="w-full border-collapse text-left text-sm">
                   <thead>
                     <tr className="border-b border-border bg-surface-muted/60 text-xs font-medium text-muted-foreground">

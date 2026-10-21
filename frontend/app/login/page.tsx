@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ShieldCheck, Sparkles } from "lucide-react";
@@ -27,6 +27,13 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    // Unconditionally ensure inputs are empty on mount/navigation
+    setEmail("");
+    setPassword("");
+    setErrorMessage(null);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -90,19 +97,20 @@ export default function LoginPage() {
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} autoComplete="off" className="space-y-4">
             <div>
               <label className="mb-1.5 block text-xs font-medium text-foreground">
                 Work Email
               </label>
               <Input
                 type="email"
+                name="login_user_account_email"
                 required
                 minLength={3}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@company.com"
-                autoComplete="email"
+                autoComplete="off"
                 disabled={isSubmitting}
               />
             </div>
@@ -113,12 +121,13 @@ export default function LoginPage() {
               </label>
               <Input
                 type="password"
+                name="login_user_account_password"
                 required
                 minLength={1}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
-                autoComplete="current-password"
+                autoComplete="new-password"
                 disabled={isSubmitting}
               />
             </div>

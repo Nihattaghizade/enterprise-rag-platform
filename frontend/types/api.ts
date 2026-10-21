@@ -138,6 +138,25 @@ export interface SuperadminOverviewResponse {
   total_queries: number;
 }
 
+export interface PlatformUserResponse {
+  user_id: string;
+  email: string;
+  is_active: boolean;
+  created_at: string;
+  role: RoleType | "unassigned";
+  tenant_id?: string | null;
+  tenant_name?: string | null;
+  membership_status?: string | null;
+  membership_id?: string | null;
+}
+
+export interface SuperadminCreateUserRequest {
+  email: string;
+  password: string;
+  role: RoleType;
+  tenant_id?: string | null;
+}
+
 export interface HealthLivenessResponse {
   status: string;
 }

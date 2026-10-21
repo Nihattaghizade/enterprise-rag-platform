@@ -75,3 +75,24 @@ class SuperadminOverviewResponse(BaseModel):
     pending_approvals: int
     total_documents: int
     total_queries: int
+
+
+class PlatformUserResponse(BaseModel):
+    user_id: uuid.UUID
+    email: str
+    is_active: bool
+    created_at: datetime
+    role: str
+    tenant_id: Optional[uuid.UUID] = None
+    tenant_name: Optional[str] = None
+    membership_status: Optional[str] = None
+    membership_id: Optional[uuid.UUID] = None
+
+
+class SuperadminCreateUserRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    role: str = Field(..., pattern="^(trial_viewer|viewer|editor|admin|superadmin)$")
+    tenant_id: Optional[uuid.UUID] = None
+
+
