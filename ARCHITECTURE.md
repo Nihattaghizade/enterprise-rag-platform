@@ -81,6 +81,9 @@ rag-platform/
 │   ├── pyproject.toml
 │   ├── alembic.ini
 │   ├── Dockerfile
+│   ├── seed_data.py
+│   ├── scripts/
+│   │   └── seed_data.py
 │   ├── app/
 │   │   ├── __init__.py
 │   │   ├── main.py
@@ -93,6 +96,7 @@ rag-platform/
 │   │   │   ├── documents.py
 │   │   │   ├── chat.py
 │   │   │   ├── tenants.py
+│   │   │   ├── superadmin.py
 │   │   │   └── health.py
 │   │   │
 │   │   ├── core/
@@ -186,12 +190,21 @@ rag-platform/
     │   ├── page.tsx
     │   ├── globals.css
     │   ├── login/page.tsx
+    │   ├── signup/page.tsx
     │   ├── chat/page.tsx
     │   ├── documents/page.tsx
     │   ├── documents/[id]/page.tsx
-    │   └── admin/tenants/page.tsx
+    │   ├── admin/tenants/page.tsx
+    │   └── admin/super/page.tsx
     ├── components/
     │   ├── ui/
+    │   │   ├── command-palette.tsx
+    │   │   ├── toast.tsx
+    │   │   ├── button.tsx
+    │   │   ├── card.tsx
+    │   │   ├── input.tsx
+    │   │   ├── badge.tsx
+    │   │   └── skeleton.tsx
     │   ├── chat/
     │   │   ├── chat-input.tsx
     │   │   ├── chat-messages.tsx
@@ -246,11 +259,12 @@ API files are thin controllers. They validate request schemas, authenticate/auth
 | File | Route ownership | Responsibilities |
 |---|---|---|
 | `api/deps.py` | Dependencies | Inject DB/Redis/Qdrant/MinIO clients; resolve current user, tenant membership, and request context. |
-| `api/auth.py` | `/api/v1/auth/*` | Login, refresh, logout. Calls `core/auth.py`. |
-| `api/documents.py` | `/api/v1/documents/*` | Upload, list, detail, delete, reindex, status. Calls `document_service.py`. |
-| `api/chat.py` | `/api/v1/chat/stream` | Accepts a query and streams answer/citation SSE events. Calls `chat_service.py`. |
-| `api/tenants.py` | `/api/v1/tenants/*` | Tenant and membership administration. Requires admin role. |
-| `api/health.py` | `/health`, `/ready`, `/metrics` | Liveness/readiness and protected metrics endpoint. |
+| `api/auth.py` | `/api/v1/auth/*` | Login, refresh, logout, self-service registration (`/signup`), and public workspace directory (`/workspaces/public`). Calls `core/auth.py`. |
+| `api/documents.py` | `/api/v1/documents/*` | Upload, list, detail, delete, reindex, status. Enforces `trial_viewer` 2-file evaluation limits. Calls `document_service.py`. |
+| `api/chat.py` | `/api/v1/chat/stream` | Accepts a query and streams answer/citation SSE events. Enforces `trial_viewer` 10-query evaluation limit. Calls `chat_service.py`. |
+| `api/tenants.py` | `/api/v1/tenants/*` | Tenant management, member roster, role updates, pending applicant approvals, and real-time trial usage telemetry (`/{id}/trial-status`). |
+| `api/superadmin.py` | `/api/v1/superadmin/*` | Platform console, cross-tenant workspace approval/rejection queues, user governance, 4-tier cascading deletions, and system telemetry. Requires `superadmin` role. |
+| `api/health.py` | `/health`, `/ready`, `/metrics` | Liveness/readiness probes and protected infrastructure metrics endpoint. |
 
 ### 5.3 Core security and permissions
 
@@ -258,9 +272,24 @@ API files are thin controllers. They validate request schemas, authenticate/auth
 |---|---|---|
 | `core/security.py` | Password hashing, password validation, generic token primitives. | `hash_password()`, `verify_password()` |
 | `core/auth.py` | Authenticate users; issue, refresh, decode, and revoke JWTs. | `authenticate_user()`, `create_access_token()`, `create_refresh_token()`, `decode_token()` |
-| `core/permissions.py` | Role checks and tenant-scoped authorization helpers. | `require_role()`, `assert_tenant_access()` |
+| `core/permissions.py` | 5-tier hierarchical RBAC checks, isolated sandbox rules, and tenant-scoped authorization. | `require_role()`, `assert_tenant_access()`, `ROLE_HIERARCHY` |
 | `core/rate_limit.py` | Redis-backed per-user and per-tenant rate limiting. | `check_rate_limit()` |
 | `core/errors.py` | Domain exceptions mapped to the standard API error response. | `NotFoundError`, `ForbiddenError`, `ValidationError` |
+
+#### 5.3.1 Role Hierarchy & Permissions Engine (`core/permissions.py`)
+
+The platform implements an explicit 5-tier hierarchical RBAC model:
+
+| Role | Rank Level | Scope & Capabilities |
+|---|---|---|
+| `superadmin` | 100 | Universal platform console access; cross-tenant approvals, user governance, cascading deletions, and infrastructure telemetry. |
+| `admin` | 30 | Workspace administration; manage team memberships, approve/reject workspace applicants, update roles, configure settings. |
+| `editor` | 20 | Knowledge base management; upload source documents, reindex, delete, and execute AI queries. |
+| `viewer` | 10 | Enterprise read-only; browse ready documents, download source files, execute AI assistant queries. |
+| `trial_viewer` | 5 | Evaluation sandbox role; auto-assigned to sandbox workspace with strict enforcement of 2 documents max and 10 queries max. |
+
+**Isolated Permission Boundary:**
+Standard linear inheritance applies (`superadmin > admin > editor > viewer`). However, `trial_viewer` permissions are strictly isolated: granting document upload rights to `trial_viewer` for evaluation testing does **not** grant upload permissions to standard enterprise `viewer` accounts (viewers remain strictly read-only).
 
 ### 5.4 Database layer
 
@@ -301,11 +330,16 @@ This section defines the core relational schema used by the application. All tab
 
 | Column | Type | Constraints | Notes |
 |---|---|---|---|
-| id | UUID | PK, NOT NULL | Tenant/workspace |
+| id | UUID | PK, NOT NULL | Tenant/workspace identifier |
 | name | TEXT | NOT NULL | Human-readable tenant name |
 | slug | TEXT | UNIQUE, NOT NULL | URL-friendly identifier |
-| settings | JSONB | NOT NULL DEFAULT '{}' | Tenant-level config (features, quotas) |
+| status | TEXT | NOT NULL DEFAULT 'active' | Lifecycle status: `active`, `pending`, `suspended` |
+| settings | JSONB | NOT NULL DEFAULT '{}' | Workspace settings: `is_platform`, `is_sandbox`, `max_documents`, `max_questions`, `storage_quota_mb` |
 | is_active | BOOLEAN | NOT NULL DEFAULT true | Soft delete / deactivation |
+
+*Core System Tenants:*
+* **Platform Administration Root (`00000000-0000-0000-0000-000000000001`, slug: `platform`):** Root governance console reserved for `superadmin` role.
+* **Trial Sandbox (`00000000-0000-0000-0000-000000000002`, slug: `sandbox-trial`):** Isolated sandbox tenant for evaluation testing with strict document/query caps.
 
 **memberships**
 
@@ -314,7 +348,8 @@ This section defines the core relational schema used by the application. All tab
 | id | UUID | PK, NOT NULL | Membership row |
 | user_id | UUID | FK → users.id, NOT NULL | User reference |
 | tenant_id | UUID | FK → tenants.id, NOT NULL | Tenant reference |
-| role | TEXT | NOT NULL | `admin`, `editor`, `viewer` |
+| role | TEXT | NOT NULL | `superadmin`, `admin`, `editor`, `viewer`, `trial_viewer` |
+| status | TEXT | NOT NULL DEFAULT 'active' | Membership approval status: `active`, `pending` |
 | UNIQUE (user_id, tenant_id) | | | One membership per user/tenant |
 
 Indexes:
@@ -957,6 +992,59 @@ Document detail page
   -> delete or retain PostgreSQL records according to retention/audit policy
   -> invalidate Redis entries associated with document/tenant
   -> write audit event
+```
+
+### 13.4 Self-Service Registration & Workspace Approval Flow
+
+```text
+signup/page.tsx
+  -> GET /api/v1/auth/workspaces/public (fetches approved active workspaces)
+  -> POST /api/v1/auth/signup
+  -> Role-specific routing:
+     ├── trial_viewer: auto-assigned to Trial Sandbox (status='active', requires_approval=false)
+     ├── viewer / editor: attached to selected workspace (status='pending', requires_approval=true)
+     └── admin: provisions new workspace proposal with duplicate name collision check (status='pending')
+  -> Workspace admin approves member via /api/v1/tenants/{id}/pending-members/{mem_id}/approve
+  -> Platform superadmin approves workspace via /api/v1/superadmin/tenants/{id}/approve
+```
+
+### 13.5 Trial Sandbox Evaluation & Real-Time Limit Enforcement
+
+```text
+document-upload.tsx / chat-input.tsx
+  -> GET /api/v1/tenants/{tenant_id}/trial-status
+  -> Real-time counter synchronization (documents: X/2, questions: Y/10)
+  -> Upload Attempt (POST /api/v1/documents):
+     └── Enforces max 2 files -> raises 'trial_document_limit_reached' when cap exceeded
+  -> Query Attempt (POST /api/v1/chat/stream):
+     └── Enforces max 10 queries -> yields SSE error 'trial_question_limit_reached' when cap exceeded
+  -> Frontend locks inputs and surfaces upgrade prompts upon reaching limits
+```
+
+### 13.6 Superadmin Governance & 4-Tier Cascading Workspace Deletion
+
+```text
+admin/super/page.tsx (Superadmin Command Center)
+  -> DELETE /api/v1/superadmin/tenants/{tenant_id}
+  -> require_roles("superadmin") authorization check
+  -> Tier 1 (MinIO S3): Purges all document objects and parent context files for tenant
+  -> Tier 2 (Qdrant Vector DB): Removes all collection points matching filter tenant_id == {tenant_id}
+  -> Tier 3 (Redis In-Memory): Clears all query caches, rate-limit keys, and lock tokens
+  -> Tier 4 (PostgreSQL Relational): Cascades deletion across parent_contexts, documents,
+     query_logs, usage_records, audit_logs, memberships, associated user accounts, and tenant record
+```
+
+### 13.7 Frontend Interactive Architecture, Loading Sub-Screen & Keyboard Navigation
+
+```text
+login/page.tsx
+  -> Form submission triggers multi-phase state: 'idle' -> 'authenticating' -> 'initializing'
+  -> Displays high-end Loading Sub-Screen (brand halo, stepped verification checklist, progress bar)
+  -> Pre-warms target route via router.prefetch()
+  -> AppShell / Sidebar / Navbar enforces isAuthPage shielding (suppresses workspace pop-in)
+  -> Seamless transition to target interface (/chat or /admin/super) without layout or modal flicker
+  -> Global Chord Shortcuts (G C: Chat, G D: Documents, G H: Home, G A: Admin)
+  -> Command Palette (Ctrl + K / Cmd + K) for rapid modal navigation
 ```
 
 ## 14. Docker Compose Services
