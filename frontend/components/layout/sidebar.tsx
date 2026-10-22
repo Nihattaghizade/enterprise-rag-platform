@@ -33,7 +33,8 @@ export function Sidebar({
   const { session, isAuthenticated, isAdmin, isSuperAdmin, isTrialViewer } =
     use_auth();
 
-  if (!isAuthenticated) {
+  const isAuthPage = pathname === "/login" || pathname === "/signup";
+  if (!isAuthenticated || isAuthPage) {
     return null;
   }
 

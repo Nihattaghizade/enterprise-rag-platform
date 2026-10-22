@@ -69,9 +69,11 @@ export function Navbar({
     };
   }, []);
 
+  const isAuthPage = pathname === "/login" || pathname === "/signup";
+
   const breadcrumbs = React.useMemo(() => {
-    // Unauthenticated pages (login, signup) should not display duplicate brand crumbs
-    if (!isAuthenticated) {
+    // Unauthenticated pages or auth pages (login, signup) should not display duplicate brand crumbs
+    if (!isAuthenticated || isAuthPage) {
       return [];
     }
 
@@ -115,7 +117,7 @@ export function Navbar({
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-surface/85 px-4 sm:px-6 backdrop-blur-md">
       <div className="flex items-center gap-3">
-        {isAuthenticated ? (
+        {isAuthenticated && !isAuthPage ? (
           <button
             type="button"
             onClick={onToggleSidebar}
@@ -194,7 +196,7 @@ export function Navbar({
           </span>
         </div>
 
-        {isAuthenticated && session && (
+        {isAuthenticated && !isAuthPage && session && (
           <div className="hidden lg:flex items-center gap-2">
             <Badge variant="primary" className="capitalize text-[11px]">
               <ShieldCheck className="h-3 w-3" />
@@ -213,7 +215,7 @@ export function Navbar({
           <Moon className="hidden h-4 w-4 dark:block" />
         </button>
 
-        {isAuthenticated ? (
+        {isAuthenticated && !isAuthPage ? (
           <Button
             variant="ghost"
             size="sm"

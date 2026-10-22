@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, Sparkles } from "lucide-react";
+import { CheckCircle2, Loader2, ShieldCheck, Sparkles } from "lucide-react";
 import { use_auth } from "@/lib/auth";
 import { ApiRequestError } from "@/types/api";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 
+type LoginPhase = "idle" | "authenticating" | "initializing";
+
 export default function LoginPage() {
   const router = useRouter();
   const { signIn } = use_auth();
@@ -26,13 +28,16 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loginPhase, setLoginPhase] = useState<LoginPhase>("idle");
+  const [authenticatedRole, setAuthenticatedRole] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string>("");
 
   useEffect(() => {
     // Unconditionally ensure inputs are empty on mount/navigation
     setEmail("");
     setPassword("");
     setErrorMessage(null);
+    setLoginPhase("idle");
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,12 +54,17 @@ export default function LoginPage() {
       return;
     }
 
-    setIsSubmitting(true);
+    setUserEmail(trimmedEmail);
+    setLoginPhase("authenticating");
+
     try {
       const tokenRes = await signIn({
         email: trimmedEmail,
         password,
       });
+
+      setAuthenticatedRole(tokenRes.role);
+      setLoginPhase("initializing");
 
       pushToast({
         tone: "success",
@@ -62,12 +72,15 @@ export default function LoginPage() {
         description: `Signed in with ${tokenRes.role} access.`,
       });
 
-      if (tokenRes.role === "superadmin") {
-        router.push("/admin/super");
-      } else {
-        router.push("/chat");
-      }
+      const targetPath = tokenRes.role === "superadmin" ? "/admin/super" : "/chat";
+      router.prefetch(targetPath);
+
+      // Brief wait time interval so the visual loading sub-screen is smoothly visible
+      await new Promise((resolve) => setTimeout(resolve, 600));
+
+      router.push(targetPath);
     } catch (err) {
+      setLoginPhase("idle");
       if (err instanceof ApiRequestError) {
         setErrorMessage(err.message);
       } else {
@@ -75,11 +88,116 @@ export default function LoginPage() {
           "Unable to connect to the authentication service. Please check your connection."
         );
       }
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
+  // --- VISUAL LOADING SUB-SCREEN DURING SIGN IN WAIT TIME INTERVAL ---
+  if (loginPhase !== "idle") {
+    return (
+      <div className="mesh-surface flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-6">
+        <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-surface-elevated/95 p-8 shadow-elevated backdrop-blur-xl animate-in fade-in-50 zoom-in-95 duration-300">
+          {/* Ambient luminous glow circles */}
+          <div className="absolute -top-16 -right-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl pointer-events-none" />
+          <div className="absolute -bottom-16 -left-16 h-48 w-48 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+
+          <div className="relative flex flex-col items-center text-center space-y-6">
+            {/* Center Emblem with animated spinning halo */}
+            <div className="relative flex h-20 w-20 items-center justify-center">
+              <div className="absolute inset-0 rounded-2xl border-2 border-primary/20 border-t-primary animate-spin" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-primary to-primary-hover text-primary-foreground shadow-lg shadow-primary/25">
+                <Sparkles className="h-7 w-7 animate-pulse" />
+              </div>
+            </div>
+
+            {/* Title & Subtitle */}
+            <div className="space-y-2">
+              <h2 className="font-display text-xl font-bold text-foreground sm:text-2xl">
+                {loginPhase === "authenticating"
+                  ? "Authenticating Session..."
+                  : "Initializing Workspace..."}
+              </h2>
+              <p className="text-xs text-muted-foreground leading-relaxed max-w-xs mx-auto">
+                {loginPhase === "authenticating"
+                  ? "Verifying organizational credentials against security policies..."
+                  : `Preparing workspace interface for ${userEmail || "user"}. Connecting encrypted session...`}
+              </p>
+            </div>
+
+            {/* Stepped Progress Checklist Sub-Screen */}
+            <div className="w-full space-y-3 rounded-xl border border-border-subtle bg-surface/70 p-4 text-left text-xs shadow-inner">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2.5 text-foreground font-medium">
+                  {loginPhase === "authenticating" ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  )}
+                  <span>Identity Verification</span>
+                </span>
+                <span
+                  className={`text-[11px] font-mono ${
+                    loginPhase === "authenticating"
+                      ? "text-primary animate-pulse"
+                      : "text-emerald-400 font-semibold"
+                  }`}
+                >
+                  {loginPhase === "authenticating" ? "Verifying..." : "Verified"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2.5 text-foreground font-medium">
+                  {loginPhase === "initializing" ? (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  ) : (
+                    <span className="flex h-4 w-4 items-center justify-center">
+                      <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+                    </span>
+                  )}
+                  <span>Workspace & Role Resolution</span>
+                </span>
+                <span className="text-[11px] font-mono text-muted-foreground capitalize">
+                  {loginPhase === "initializing"
+                    ? authenticatedRole || "Authorized"
+                    : "Pending"}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-2.5 text-foreground font-medium">
+                  <span className="flex h-4 w-4 items-center justify-center">
+                    <span className="h-2 w-2 rounded-full bg-primary animate-ping" />
+                  </span>
+                  <span>Interface Launch</span>
+                </span>
+                <span className="text-[11px] font-mono text-primary animate-pulse">
+                  Opening...
+                </span>
+              </div>
+            </div>
+
+            {/* Loading Progress Bar */}
+            <div className="w-full space-y-2">
+              <div className="h-1.5 w-full overflow-hidden rounded-full bg-surface-muted">
+                <div
+                  className="h-full bg-gradient-to-r from-primary to-primary-hover transition-all duration-500 ease-out"
+                  style={{
+                    width: loginPhase === "authenticating" ? "45%" : "100%",
+                  }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground/70 font-mono">
+                <span>VERITAS INTEL</span>
+                <span>CRYPTOGRAPHICALLY ISOLATED</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // --- STANDARD LOGIN FORM ---
   return (
     <div className="mesh-surface flex min-h-[calc(100vh-3.5rem)] items-center justify-center p-6">
       <Card className="w-full max-w-md shadow-elevated border-border">
@@ -111,7 +229,6 @@ export default function LoginPage() {
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="name@company.com"
                 autoComplete="off"
-                disabled={isSubmitting}
               />
             </div>
 
@@ -128,7 +245,6 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
                 autoComplete="new-password"
-                disabled={isSubmitting}
               />
             </div>
 
@@ -160,9 +276,8 @@ export default function LoginPage() {
               variant="primary"
               size="lg"
               className="w-full mt-2"
-              disabled={isSubmitting}
             >
-              {isSubmitting ? "Signing in..." : "Sign In to Workspace"}
+              Sign In to Workspace
             </Button>
 
             <div className="pt-2 text-center">
