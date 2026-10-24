@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional, Sequence
@@ -8,6 +9,53 @@ from qdrant_client.http import models as qmodels
 from app.config import get_settings
 from app.db.models import Document
 from app.ingestion.types import RetrievalChunkData
+
+logger = logging.getLogger(__name__)
+
+# Strict 3 MB max batch size for Qdrant payload inserts
+MAX_QDRANT_BATCH_BYTES = 3 * 1024 * 1024  # 3 MB (3,145,728 bytes)
+
+
+def estimate_point_bytes(point: qmodels.PointStruct) -> int:
+    """Estimate serialized JSON byte size of a point for Qdrant batching."""
+    vec = point.vector
+    dense_size = len(vec.get("dense", [])) * 14 if isinstance(vec, dict) else 14336
+    sparse = vec.get("sparse") if isinstance(vec, dict) else None
+    sparse_size = 0
+    if sparse is not None:
+        if isinstance(sparse, qmodels.SparseVector):
+            sparse_size = (len(sparse.indices) + len(sparse.values)) * 14
+        elif isinstance(sparse, dict):
+            sparse_size = (len(sparse.get("indices", [])) + len(sparse.get("values", []))) * 14
+    payload = point.payload or {}
+    text_size = len(str(payload.get("chunk_text", "")).encode("utf-8", errors="replace"))
+    overhead = 1024  # metadata, UUIDs, structure brackets
+    return dense_size + sparse_size + text_size + overhead
+
+
+def split_points_into_batches(
+    points: Sequence[qmodels.PointStruct],
+    max_batch_bytes: int = MAX_QDRANT_BATCH_BYTES,
+) -> list[list[qmodels.PointStruct]]:
+    """Partition points into batches where each batch does not exceed max_batch_bytes (3 MB)."""
+    batches: list[list[qmodels.PointStruct]] = []
+    current_batch: list[qmodels.PointStruct] = []
+    current_bytes = 0
+
+    for pt in points:
+        pt_bytes = estimate_point_bytes(pt)
+        if current_batch and (current_bytes + pt_bytes > max_batch_bytes):
+            batches.append(current_batch)
+            current_batch = [pt]
+            current_bytes = pt_bytes
+        else:
+            current_batch.append(pt)
+            current_bytes += pt_bytes
+
+    if current_batch:
+        batches.append(current_batch)
+
+    return batches
 
 
 def get_qdrant_client() -> AsyncQdrantClient:
@@ -134,11 +182,29 @@ async def upsert_retrieval_chunks(
                 )
             )
 
-        await qclient.upsert(
-            collection_name=collection_name,
-            points=points,
-            wait=True,
+        batches = split_points_into_batches(points, max_batch_bytes=MAX_QDRANT_BATCH_BYTES)
+        logger.info(
+            "Upserting %d points for document %s to collection '%s' across %d batch(es) (max 3 MB per batch)",
+            len(points),
+            document.id,
+            collection_name,
+            len(batches),
         )
+
+        for batch_idx, batch in enumerate(batches, start=1):
+            await qclient.upsert(
+                collection_name=collection_name,
+                points=batch,
+                wait=True,
+            )
+            logger.debug(
+                "Upserted batch %d/%d (%d points) for document %s",
+                batch_idx,
+                len(batches),
+                len(batch),
+                document.id,
+            )
+
         return len(points)
     finally:
         if owns_client:
